@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Datasets and large model files
+datasets/
+data/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.ckpt
+
+# Temporary files
+*.log
+.DS_Store
