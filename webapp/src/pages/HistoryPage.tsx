@@ -223,7 +223,7 @@ const HistoryPage: React.FC = () => {
     setPage(1);
   };
 
-  const SortIcon: React.FC<{ col: SortKey }> = ({ col }) => {
+  const getSortIcon = (col: SortKey) => {
     if (sortKey !== col) return <ChevronDown size={13} className="text-gray-300" />;
     return sortDir === 'asc'
       ? <ChevronUp size={13} className="text-emerald-700" />
@@ -357,7 +357,7 @@ const HistoryPage: React.FC = () => {
                           onClick={() => toggleSort('timestamp')}
                           aria-label={`Sort by timestamp ${sortKey === 'timestamp' ? (sortDir === 'asc' ? 'descending' : 'ascending') : ''}`}
                         >
-                          Timestamp <SortIcon col="timestamp" />
+                          Timestamp {getSortIcon('timestamp')}
                         </button>
                       </th>
                       <th>Image</th>
@@ -369,7 +369,7 @@ const HistoryPage: React.FC = () => {
                           onClick={() => toggleSort('detections')}
                           aria-label={`Sort by detections`}
                         >
-                          Det. <SortIcon col="detections" />
+                          Det. {getSortIcon('detections')}
                         </button>
                       </th>
                       <th>
@@ -378,7 +378,7 @@ const HistoryPage: React.FC = () => {
                           onClick={() => toggleSort('severity')}
                           aria-label={`Sort by severity`}
                         >
-                          Severity <SortIcon col="severity" />
+                          Severity {getSortIcon('severity')}
                         </button>
                       </th>
                     </tr>
