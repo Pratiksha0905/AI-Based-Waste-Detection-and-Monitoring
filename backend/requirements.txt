@@ -15,12 +15,14 @@ aiosqlite==0.21.0           # async SQLite driver (dev / tests)
 
 # Authentication & security
 python-jose[cryptography]==3.5.0
-passlib[bcrypt]==1.7.4
+argon2-cffi==23.1.0          # password hashing — works cleanly with Python 3.13
 python-multipart==0.0.20    # required for form data / file uploads
 
+
 # Validation & settings
-pydantic==2.11.4
+pydantic[email]==2.11.4
 pydantic-settings==2.9.1
+email-validator==2.2.0
 
 # Image processing (content validation, no AI inference)
 Pillow==11.2.1

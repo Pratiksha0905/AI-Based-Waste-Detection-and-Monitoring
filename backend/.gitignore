@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Environment & secrets
+.env
+*.env
+
+# Database files (dev SQLite)
+*.db
+*.sqlite3
+
+# Uploads (user images — back up separately)
+uploads/
+
+# Logs
+*.log
+
+# Model checkpoints (too large for Git — back up separately)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.ckpt
+
+# Alembic generated files (keep migrations/ itself)
+migrations/versions/__pycache__/
+
+# Test artefacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+*.swp

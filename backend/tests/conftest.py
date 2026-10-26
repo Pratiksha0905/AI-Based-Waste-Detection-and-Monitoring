@@ -2,14 +2,13 @@
 EcoWatch AI — pytest configuration and fixtures.
 
 Uses an in-memory SQLite database so tests never touch the production DB.
-Temporary upload directories are cleaned up after each test session.
+Each test gets a fresh database session in the same event loop.
 """
 
 from __future__ import annotations
 
 import io
-import tempfile
-from typing import AsyncGenerator
+import os
 
 import pytest
 import pytest_asyncio
@@ -18,29 +17,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.base import Base
 from app.db.session import get_db
-from app.main import create_app
 import app.models  # noqa — register all ORM models
 
-# ── In-memory test database ───────────────────────────────────────────────────
+# ─── one engine per test session (in-memory SQLite) ──────────────────────────
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
-_test_engine = create_async_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
-_TestSession = async_sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)
 
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def _create_tables():
-    async with _test_engine.begin() as conn:
+@pytest_asyncio.fixture(scope="session")
+async def engine():
+    eng = create_async_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
+    async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with _test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    yield eng
+    await eng.dispose()
 
 
 @pytest_asyncio.fixture
-async def db() -> AsyncGenerator[AsyncSession, None]:
-    async with _TestSession() as session:
+async def db(engine) -> AsyncSession:
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
         yield session
 
 
@@ -51,14 +47,10 @@ def _tmp_uploads(tmp_path, monkeypatch):
     """Point UPLOAD_DIR at a temporary directory for each test."""
     from app.core import config as cfg_module
 
-    original = cfg_module.get_settings.cache_info()
     cfg_module.get_settings.cache_clear()
-
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setenv("DATABASE_URL", TEST_DB_URL)
-
     yield tmp_path
-
     cfg_module.get_settings.cache_clear()
 
 
@@ -71,27 +63,25 @@ async def client(db: AsyncSession):
     async def _override_db():
         yield db
 
-    app = create_app()
-    app.dependency_overrides[get_db] = _override_db
+    from app.main import create_app
+
+    application = create_app()
+    application.dependency_overrides[get_db] = _override_db
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=application), base_url="http://test"
     ) as ac:
         yield ac
 
 
-# ── Minimal synthetic image (valid JPEG, 1×1 px) ─────────────────────────────
+# ── Minimal synthetic JPEG (valid 1×1 px image) ───────────────────────────────
 
 @pytest.fixture
 def minimal_jpeg() -> bytes:
-    """
-    A real 1×1 pixel JPEG image for upload tests.
-    This is a valid image created at test time — NOT stored in production.
-    """
     from PIL import Image
 
     buf = io.BytesIO()
-    img = Image.new("RGB", (1, 1), color=(0, 128, 0))
+    img = Image.new("RGB", (4, 4), color=(0, 128, 0))
     img.save(buf, format="JPEG")
     return buf.getvalue()
 
@@ -100,20 +90,21 @@ def minimal_jpeg() -> bytes:
 
 @pytest_asyncio.fixture
 async def user_token(client: AsyncClient) -> str:
-    await client.post(
+    r = await client.post(
         "/api/auth/register",
         json={"name": "Test User", "email": "user@test.com", "password": "password123"},
     )
+    assert r.status_code in (201, 409), f"Register failed: {r.text}"
     resp = await client.post(
         "/api/auth/login",
         json={"email": "user@test.com", "password": "password123"},
     )
+    assert resp.status_code == 200, f"Login failed: {resp.text}"
     return resp.json()["access_token"]
 
 
 @pytest_asyncio.fixture
 async def admin_token(client: AsyncClient, db: AsyncSession) -> str:
-    """Creates an admin directly via service (no public endpoint for admin registration)."""
     from app.services.auth_service import create_admin_user
 
     await create_admin_user(db, "Admin", "admin@test.com", "adminpass123")
@@ -121,4 +112,5 @@ async def admin_token(client: AsyncClient, db: AsyncSession) -> str:
         "/api/auth/login",
         json={"email": "admin@test.com", "password": "adminpass123"},
     )
+    assert resp.status_code == 200, f"Admin login failed: {resp.text}"
     return resp.json()["access_token"]

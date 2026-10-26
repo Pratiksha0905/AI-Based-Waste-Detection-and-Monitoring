@@ -39,7 +39,7 @@ class DetectionOut(BaseModel):
 class ReportCreate(BaseModel):
     latitude: float = Field(..., ge=-90.0, le=90.0, description="WGS-84 latitude")
     longitude: float = Field(..., ge=-180.0, le=180.0, description="WGS-84 longitude")
-    description: Optional[str] = Field(None, max_length=1000, strip_whitespace=True)
+    description: Optional[str] = Field(None, max_length=1000)
 
 
 # ── Report response ───────────────────────────────────────────────────────────
