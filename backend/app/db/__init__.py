@@ -1,0 +1,1 @@
+# EcoWatch AI — db package

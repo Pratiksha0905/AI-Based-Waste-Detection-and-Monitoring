@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# EcoWatch AI — Backend dependencies
+# Python 3.13+
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Web framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+
+# Database
+sqlalchemy==2.0.41
+alembic==1.16.1
+aiosqlite==0.21.0           # async SQLite driver (dev / tests)
+# psycopg2-binary==2.9.9    # uncomment for PostgreSQL in production
+
+# Authentication & security
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20    # required for form data / file uploads
+
+# Validation & settings
+pydantic==2.11.4
+pydantic-settings==2.9.1
+
+# Image processing (content validation, no AI inference)
+Pillow==11.2.1
+
+# HTTP utilities
+anyio==4.9.0
+
+# Testing
+pytest==8.3.5
+pytest-asyncio==0.26.0
+httpx==0.28.1               # ASGI test client
+
+# ── Optional: YOLO inference (install when checkpoint is available) ────────────
+# ultralytics==8.3.x        # uncomment when MODEL_PATH is configured
+# torch>=2.0                # required by ultralytics
