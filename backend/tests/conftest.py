@@ -19,6 +19,18 @@ from app.db.base import Base
 from app.db.session import get_db
 import app.models  # noqa — register all ORM models
 
+# ── Suppress background inference in tests ────────────────────────────────────
+# _run_inference_sync spins up a new event loop + new DB session that doesn't
+# share the in-memory test database, so we patch it out entirely.
+
+@pytest.fixture(autouse=True)
+def _no_background_inference(monkeypatch):
+    """Replace _run_inference_sync with a no-op so tests don't hit a separate DB."""
+    monkeypatch.setattr(
+        "app.services.report_service._run_inference_sync",
+        lambda *args, **kwargs: None,
+    )
+
 # ─── one engine per test session (in-memory SQLite) ──────────────────────────
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"

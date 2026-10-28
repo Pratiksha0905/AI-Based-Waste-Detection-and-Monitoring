@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +27,11 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 def _to_summary(report) -> ReportSummary:
+    # Safe detection count: if detections were eagerly loaded use them, else default to 0
+    try:
+        det_count = len(report.detections)
+    except Exception:
+        det_count = 0
     return ReportSummary(
         id=report.id,
         user_id=report.user_id,
@@ -36,7 +41,7 @@ def _to_summary(report) -> ReportSummary:
         submitted_at=report.submitted_at,
         processing_status=report.processing_status,  # type: ignore
         review_status=report.review_status,           # type: ignore
-        detection_count=len(report.detections) if hasattr(report, "detections") else 0,
+        detection_count=det_count,
     )
 
 
@@ -44,6 +49,7 @@ def _to_summary(report) -> ReportSummary:
 
 @router.post("", response_model=ReportOut, status_code=201)
 async def submit_report(
+    background_tasks: BackgroundTasks,
     image: UploadFile = File(..., description="Waste image (JPEG, PNG, WebP, max 20 MB)"),
     latitude: float = Form(..., ge=-90, le=90),
     longitude: float = Form(..., ge=-180, le=180),
@@ -61,7 +67,7 @@ async def submit_report(
         longitude=longitude,
         description=description,
     )
-    report = await report_service.create_report(db, current_user, image, payload)
+    report = await report_service.create_report(db, current_user, image, payload, background_tasks)
     return ReportOut.model_validate(report)
 
 
@@ -169,6 +175,7 @@ async def get_image(
 @router.post("/{report_id}/retry", response_model=ReportOut)
 async def retry(
     report_id: str,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -176,5 +183,5 @@ async def retry(
     Retry inference on a failed or pending report.
     Users can retry their own; admins can retry any.
     """
-    report = await report_service.retry_inference(db, report_id, current_user)
+    report = await report_service.retry_inference(db, report_id, current_user, background_tasks)
     return ReportOut.model_validate(report)

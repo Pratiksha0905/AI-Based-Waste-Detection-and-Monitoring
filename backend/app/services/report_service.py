@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
+
+from fastapi import BackgroundTasks
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,18 +35,17 @@ logger = logging.getLogger(__name__)
 async def create_report(
     db: AsyncSession,
     user: User,
-    upload,         # FastAPI UploadFile
+    upload,                         # FastAPI UploadFile
     payload: ReportCreate,
+    background_tasks: Optional[BackgroundTasks] = None,
 ) -> Report:
     """
     Full report creation workflow:
       1. Validate & persist image.
       2. Save Report row (processing_status='pending').
       3. Commit.
-      4. Kick off inference in background (non-blocking).
+      4. Schedule inference via FastAPI BackgroundTasks (bound to request lifecycle).
     """
-    from app.services.image_storage_service import validate_and_store_image
-
     # Step 1 — image validation and storage
     image_key = await validate_and_store_image(upload)
 
@@ -65,15 +66,39 @@ async def create_report(
         await db.refresh(report)
     except Exception as exc:
         await db.rollback()
-        # Clean up orphaned image file
         delete_image(image_key)
         logger.error("DB commit failed for new report: %s", exc)
         raise
 
-    # Step 3 — background inference (fire-and-forget)
-    asyncio.create_task(_run_inference(report.id, image_key))
+    # Eagerly load detections so Pydantic model_validate doesn't lazy-load
+    result = await db.execute(
+        select(Report)
+        .options(selectinload(Report.detections))
+        .where(Report.id == report.id)
+    )
+    report = result.scalar_one()
+
+    # Step 3 — schedule background inference
+    if background_tasks is not None:
+        background_tasks.add_task(_run_inference_sync, report.id, image_key)
+    else:
+        # Fallback for direct service calls (tests, CLI)
+        asyncio.ensure_future(_run_inference(report.id, image_key))
 
     return report
+
+
+def _run_inference_sync(report_id: str, image_key: str) -> None:
+    """
+    Synchronous wrapper used by FastAPI BackgroundTasks.
+    Runs the async inference coroutine in a new event loop.
+    """
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_run_inference(report_id, image_key))
+    finally:
+        loop.close()
 
 
 async def _run_inference(report_id: str, image_key: str) -> None:
@@ -250,11 +275,22 @@ async def update_review_status(
 
     report.review_status = update_in.review_status
     await db.commit()
-    await db.refresh(report)
-    return report
+
+    # Re-fetch with eager detections for Pydantic serialization
+    result = await db.execute(
+        select(Report)
+        .options(selectinload(Report.detections))
+        .where(Report.id == report_id)
+    )
+    return result.scalar_one()
 
 
-async def retry_inference(db: AsyncSession, report_id: str, user: User) -> Report:
+async def retry_inference(
+    db: AsyncSession,
+    report_id: str,
+    user: User,
+    background_tasks: Optional[BackgroundTasks] = None,
+) -> Report:
     """
     Retry inference on a failed report.
 
@@ -272,7 +308,18 @@ async def retry_inference(db: AsyncSession, report_id: str, user: User) -> Repor
     report.processing_error = None
     report.retry_count += 1
     await db.commit()
-    await db.refresh(report)
 
-    asyncio.create_task(_run_inference(report_id, report.image_key))
+    # Re-fetch with eager detections for Pydantic serialization
+    refreshed = await db.execute(
+        select(Report)
+        .options(selectinload(Report.detections))
+        .where(Report.id == report_id)
+    )
+    report = refreshed.scalar_one()
+
+    if background_tasks is not None:
+        background_tasks.add_task(_run_inference_sync, report_id, report.image_key)
+    else:
+        asyncio.ensure_future(_run_inference(report_id, report.image_key))
+
     return report

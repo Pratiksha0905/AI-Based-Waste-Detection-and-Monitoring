@@ -126,6 +126,7 @@ class TestHealth:
 
 
 class TestModelService:
+    # Note: these tests are synchronous — no pytestmark applied
     def test_model_unavailable_when_no_path(self):
         """Backend starts and model service correctly reports unavailability."""
         from app.services.model_service import model_service
