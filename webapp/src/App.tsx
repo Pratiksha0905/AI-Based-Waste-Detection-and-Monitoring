@@ -10,6 +10,7 @@ import HistoryPage from './pages/HistoryPage';
 import AboutPage from './pages/AboutPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ReportDetailPage from './pages/ReportDetailPage';
 
 /**
  * Redirects unauthenticated users to /login.
@@ -22,13 +23,27 @@ function ProtectedRoute({
   children: React.ReactNode;
   adminOnly?: boolean;
 }) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authError } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-surface">
         <span className="inline-block w-8 h-8 border-2 border-white/20 border-t-emerald-400 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user && authError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface px-4">
+        <div className="card max-w-md p-6 text-center">
+          <h1 className="text-lg font-semibold text-gray-900">Unable to verify your session</h1>
+          <p className="mt-2 text-sm text-gray-600">{authError}</p>
+          <button className="btn-primary mt-5" onClick={() => window.location.reload()}>
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -62,6 +77,15 @@ function AppRoutes() {
       >
         <Route index element={<OverviewPage />} />
         <Route path="analysis" element={<ImageAnalysisPage />} />
+        <Route path="reports/:reportId" element={<ReportDetailPage />} />
+        <Route
+          path="admin/reports"
+          element={
+            <ProtectedRoute adminOnly>
+              <HistoryPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="map"
           element={

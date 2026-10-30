@@ -75,11 +75,19 @@ class TestReportSubmission:
         from sqlalchemy import select
         from app.models.report import Report
 
-        result = await db.execute(select(Report).where(Report.id == report_id))
-        row = result.scalar_one_or_none()
-        assert row is not None
-        assert row.latitude == 12.9716
-        assert row.longitude == 77.5946
+        result = await db.execute(
+            select(
+                Report.latitude,
+                Report.longitude,
+                Report.image_data,
+                Report.image_media_type,
+            ).where(Report.id == report_id)
+        )
+        latitude, longitude, image_data, image_media_type = result.one()
+        assert latitude == 12.9716
+        assert longitude == 77.5946
+        assert image_data == minimal_jpeg
+        assert image_media_type == "image/jpeg"
 
 
 class TestReportAccess:
@@ -178,6 +186,8 @@ class TestImageAccess:
         )
         assert r.status_code == 200
         assert len(r.content) > 0
+        assert r.content == minimal_jpeg
+        assert r.headers["content-type"] == "image/jpeg"
 
     async def test_user_cannot_get_others_image(
         self, client: AsyncClient, user_token: str, admin_token: str, minimal_jpeg: bytes

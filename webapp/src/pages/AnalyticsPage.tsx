@@ -1,279 +1,153 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertCircle, BarChart3, Bot, TrendingUp } from 'lucide-react';
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  BarChart,
   Bar,
-  PieChart,
-  Pie,
+  BarChart,
+  CartesianGrid,
   Cell,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
 } from 'recharts';
-import { BarChart3, TrendingUp, MapPin, Info } from 'lucide-react';
-import type { AnalyticsData } from '../types/observation';
-import { getAnalytics } from '../services/analysisService';
-import { categoryColor, formatShortDate, capitalise } from '../utils/display';
+import { dashboardApi, type DashboardStats, type TrendPoint } from '../api/endpoints';
+import { formatShortDate } from '../utils/display';
 
-const SEVERITY_COLORS: Record<string, string> = {
-  Low: '#10b981',
-  Medium: '#f59e0b',
-  High: '#f97316',
-  Critical: '#ef4444',
+const STATUS_COLORS: Record<string, string> = {
+  pending: '#d97706',
+  processing: '#2563eb',
+  completed: '#059669',
+  failed: '#dc2626',
+  pending_review: '#d97706',
+  reviewed: '#2563eb',
+  resolved: '#059669',
+  rejected: '#6b7280',
 };
 
-// Custom tooltips
-
-const ChartTooltip = ({
-  active,
-  payload,
-  label,
-  valueSuffix = '',
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number }>;
-  label?: string;
-  valueSuffix?: string;
-}) => {
-  if (active && payload?.length) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-        <p className="font-semibold text-gray-800">{label}</p>
-        <p className="text-gray-600 mt-0.5">
-          {payload[0].value}{valueSuffix}
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
-
-// ── Analytics Page ────────────────────────────────────────────────────────────
-
-const AnalyticsPage: React.FC = () => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getAnalytics().then((d) => {
-      setData(d);
-      setLoading(false);
-    });
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="p-5 space-y-5">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="card">
-              <div className="card-header">
-                <div className="skeleton h-4 w-32 rounded" />
-              </div>
-              <div className="card-body">
-                <div className="skeleton h-48 rounded" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  const observationLineData = data.observationsByDate.map((d) => ({
-    ...d,
-    date: formatShortDate(d.date),
-  }));
-
-  const volumeLineData = data.volumeTrend.map((d) => ({
-    ...d,
-    date: formatShortDate(d.date),
-  }));
-
-  const severityChartData = data.severityDistribution.map((s) => ({
-    name: capitalise(s.severity),
-    count: s.count,
-  }));
-
-  const categoryChartData = data.categoryDistribution
-    .sort((a, b) => b.count - a.count)
-    .map((c) => ({ name: c.category, count: c.count }));
-
+function StatusChart({ title, data }: { title: string; data: Array<{ status: string; count: number }> }) {
   return (
-    <div className="p-5 max-w-7xl mx-auto space-y-5">
-      {/* Simulated notice */}
-      <div className="flex items-start gap-2 px-4 py-3 bg-violet-50 border border-violet-200 rounded-xl text-xs text-violet-700">
-        <Info size={13} className="flex-shrink-0 mt-0.5" aria-hidden="true" />
-        <span>
-          All charts below are derived from <strong>simulated demonstration data</strong>.
-          Trend percentages and patterns do not represent statistically meaningful findings.
-        </span>
+    <section className="card">
+      <div className="card-header flex items-center gap-2">
+        <BarChart3 size={15} className="text-gray-500" />
+        <h2 className="section-title">{title}</h2>
       </div>
-
-      {/* ── Row 1: Observations over time + Volume trend ─────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Observations by date */}
-        <div className="card">
-          <div className="card-header flex items-center gap-2">
-            <TrendingUp size={15} className="text-gray-400" />
-            <span className="section-title">Observations Over Time</span>
-            <span className="ml-auto text-[10px] text-gray-400">Last 14 days</span>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={observationLineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#059669"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#059669' }}
-                  activeDot={{ r: 5 }}
-                  name="Observations"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Volume trend */}
-        <div className="card">
-          <div className="card-header flex items-center gap-2">
-            <BarChart3 size={15} className="text-gray-400" />
-            <span className="section-title">Estimated Volume Trend</span>
-            <span className="ml-auto badge badge-demo">Simulated</span>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={volumeLineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} unit=" L" />
-                <Tooltip content={<ChartTooltip valueSuffix=" L" />} />
-                <Line
-                  type="monotone"
-                  dataKey="simulatedVolumeLitres"
-                  stroke="#6366f1"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#6366f1' }}
-                  activeDot={{ r: 5 }}
-                  name="Volume (L)"
-                  strokeDasharray="4 2"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-            <p className="text-[11px] text-violet-600 mt-2">
-              Volume values are simulated estimates — not physically measured.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Row 2: Category + Severity ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Category distribution */}
-        <div className="card">
-          <div className="card-header flex items-center gap-2">
-            <BarChart3 size={15} className="text-gray-400" />
-            <span className="section-title">Detections by Category</span>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={categoryChartData} layout="vertical" barSize={16}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                  {categoryChartData.map((entry) => (
-                    <Cell key={entry.name} fill={categoryColor(entry.name as Parameters<typeof categoryColor>[0])} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Severity distribution */}
-        <div className="card">
-          <div className="card-header flex items-center gap-2">
-            <BarChart3 size={15} className="text-gray-400" />
-            <span className="section-title">Observations by Severity</span>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={severityChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={3}
-                  dataKey="count"
-                  nameKey="name"
-                  aria-label="Severity distribution donut chart"
-                >
-                  {severityChartData.map((entry) => (
-                    <Cell key={entry.name} fill={SEVERITY_COLORS[entry.name] ?? '#64748b'} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value, name) => [value, `${name} severity`]}
-                />
-                <Legend
-                  formatter={(value) => (
-                    <span className="text-xs text-gray-600">{value}</span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Row 3: Location comparison ───────────────────────────────────── */}
-      <div className="card">
-        <div className="card-header flex items-center gap-2">
-          <MapPin size={15} className="text-gray-400" />
-          <span className="section-title">Observations by Location</span>
-          <span className="ml-auto text-[10px] text-gray-400">Top 10</span>
-        </div>
-        <div className="card-body">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={data.locationComparison.map(l => ({ name: l.location.split(' ').slice(0, 2).join(' '), count: l.count, severity: l.severity }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-              <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="#059669" barSize={28}>
-                {data.locationComparison.map((entry) => (
-                  <Cell
-                    key={entry.location}
-                    fill={
-                      entry.severity === 'critical' ? '#ef4444' :
-                      entry.severity === 'high' ? '#f97316' :
-                      entry.severity === 'medium' ? '#f59e0b' : '#10b981'
-                    }
-                  />
-                ))}
+      <div className="card-body">
+        {data.length ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={data} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#edf0ed" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis type="category" dataKey="status" width={110} tickFormatter={(value: string) => value.replaceAll('_', ' ')} />
+              <Tooltip />
+              <Bar dataKey="count" name="Reports" radius={[0, 4, 4, 0]}>
+                {data.map((item) => <Cell key={item.status} fill={STATUS_COLORS[item.status] ?? '#64748b'} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        ) : <p className="py-12 text-center text-sm text-gray-500">No status data is available.</p>}
+      </div>
+    </section>
+  );
+}
+
+export default function AnalyticsPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([dashboardApi.stats(), dashboardApi.trends(30)])
+      .then(([dashboard, trends]) => {
+        if (!active) return;
+        setStats(dashboard);
+        setTrend(trends.observations_by_date);
+      })
+      .catch((requestError: unknown) => {
+        if (active) setError(requestError instanceof Error ? requestError.message : 'Unable to load analytics.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (loading) {
+    return <div className="p-5 grid gap-5 md:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <div key={index} className="card skeleton h-72" />)}</div>;
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="p-5">
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />{error ?? 'Analytics data is unavailable.'}
         </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="p-5 max-w-7xl mx-auto space-y-5">
+      <div className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${stats.model_available ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+        <Bot size={17} className="mt-0.5 shrink-0" />
+        {stats.model_available
+          ? 'AI checkpoint is available. Detection metrics below are populated only when analysis has returned results.'
+          : 'AI analysis is unavailable: no model checkpoint is configured. AI-dependent analytics are not fabricated.'}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="metric-card"><span className="text-xs text-gray-500">Reports total</span><strong className="text-2xl text-gray-900">{stats.total_reports}</strong></div>
+        <div className="metric-card"><span className="text-xs text-gray-500">Last 7 days</span><strong className="text-2xl text-gray-900">{stats.reports_last_7_days}</strong></div>
+        <div className="metric-card"><span className="text-xs text-gray-500">Last 30 days</span><strong className="text-2xl text-gray-900">{stats.reports_last_30_days}</strong></div>
+        <div className="metric-card"><span className="text-xs text-gray-500">Detection success rate</span><strong className="text-2xl text-gray-900">{stats.processing_success_rate == null ? 'Unavailable' : `${(stats.processing_success_rate * 100).toFixed(1)}%`}</strong></div>
+      </div>
+
+      <section className="card">
+        <div className="card-header flex items-center gap-2">
+          <TrendingUp size={15} className="text-gray-500" />
+          <div>
+            <h2 className="section-title">Reports submitted over time</h2>
+            <p className="section-subtitle">Daily backend totals for the last 30 days</p>
+          </div>
+        </div>
+        <div className="card-body">
+          {trend.some((point) => point.count > 0) ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={trend.map((point) => ({ ...point, date: formatShortDate(point.date) }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#edf0ed" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="count" name="Reports" fill="#16845b" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="py-12 text-center text-sm text-gray-500">No reports were submitted during this period.</p>}
+        </div>
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <StatusChart title="AI processing status" data={stats.by_processing_status} />
+        <StatusChart title="Admin review status" data={stats.by_review_status} />
+      </div>
+
+      <section className="card">
+        <div className="card-header"><h2 className="section-title">AI detection categories</h2></div>
+        <div className="card-body">
+          {stats.top_waste_categories?.length ? (
+            <div className="space-y-3">
+              {stats.top_waste_categories.map((category) => (
+                <div key={category.category} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-gray-700">{category.category}</span>
+                  <span className="font-semibold text-gray-900">{category.count}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No AI detections have been recorded; category analytics are unavailable.</p>
+          )}
+        </div>
+      </section>
     </div>
   );
-};
-
-export default AnalyticsPage;
+}

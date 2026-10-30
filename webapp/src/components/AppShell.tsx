@@ -4,12 +4,13 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
-  '/': { title: 'City Overview', subtitle: 'Waste monitoring dashboard — demonstration data' },
-  '/analysis': { title: 'Image Analysis', subtitle: 'AI-powered waste detection workspace — demo mode' },
-  '/map': { title: 'Hotspot Map', subtitle: 'Geographic waste concentration — demonstration locations' },
-  '/analytics': { title: 'Analytics', subtitle: 'Trend analysis and reporting — simulated dataset' },
-  '/history': { title: 'Observation History', subtitle: 'Analyzed image records — demo observations' },
-  '/about': { title: 'About & Integration', subtitle: 'System information and future integration guide' },
+  '/': { title: 'Waste Reports', subtitle: 'Monitor submissions and review status' },
+  '/analysis': { title: 'Submit a Report', subtitle: 'Upload an image and select its location' },
+  '/map': { title: 'Hotspot Map', subtitle: 'Report clusters from submitted locations' },
+  '/analytics': { title: 'Analytics', subtitle: 'Statistics calculated from report records' },
+  '/history': { title: 'My Reports', subtitle: 'Your submitted waste reports' },
+  '/admin/reports': { title: 'All Reports', subtitle: 'Review and manage submitted reports' },
+  '/about': { title: 'About EcoWatch AI', subtitle: 'System capabilities and AI status' },
 };
 
 const AppShell: React.FC = () => {

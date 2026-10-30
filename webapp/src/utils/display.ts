@@ -1,4 +1,4 @@
-import type { Severity, WasteCategory } from '../types/observation';
+import type { Severity } from '../api/endpoints';
 
 export function severityColor(severity: Severity): string {
   switch (severity) {
@@ -52,22 +52,6 @@ export function severityMarkerColor(severity: Severity): string {
   }
 }
 
-export function categoryColor(category: WasteCategory): string {
-  const map: Record<WasteCategory, string> = {
-    Plastic: '#3b82f6',
-    Organic: '#10b981',
-    Glass: '#8b5cf6',
-    Metal: '#6b7280',
-    Paper: '#f59e0b',
-    Construction: '#92400e',
-    'E-waste': '#ec4899',
-    Textile: '#14b8a6',
-    Hazardous: '#ef4444',
-    Mixed: '#64748b',
-  };
-  return map[category] ?? '#64748b';
-}
-
 export function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
     day: '2-digit',
@@ -79,29 +63,13 @@ export function formatTimestamp(iso: string): string {
   });
 }
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
 export function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-export function capitalise(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 export function severityLabel(s: Severity): string {
-  return capitalise(s);
-}
-
-export function confidencePercent(conf: number): string {
-  return `${Math.round(conf * 100)}%`;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function getSeverityAriaLabel(severity: Severity): string {

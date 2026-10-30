@@ -1,56 +1,36 @@
-"""
-EcoWatch AI — Image storage service.
-
-Handles:
-  - File content validation (not just MIME type)
-  - Safe unique filename generation
-  - Path-traversal prevention
-  - Persistent storage to a configurable local directory
-  - Cleanup of orphaned files on DB failure
-
-For production, swap the _write and _delete implementations with
-S3 / GCS calls without touching any other module.
-"""
+"""Validate uploaded image content before it is stored in the database."""
 
 from __future__ import annotations
 
-import hashlib
 import io
-import logging
-import os
 import uuid
-from pathlib import Path
-from typing import Set
-
+from dataclasses import dataclass
 from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 
 from app.core.config import get_settings
-from app.core.exceptions import InvalidImageError, StorageError
+from app.core.exceptions import InvalidImageError
 
-logger = logging.getLogger(__name__)
-
-settings = get_settings()
-
-ALLOWED_MIME_TYPES: Set[str] = {"image/jpeg", "image/png", "image/webp"}
-ALLOWED_PIL_FORMATS: Set[str] = {"JPEG", "PNG", "WEBP"}
+ALLOWED_PIL_FORMATS = {"JPEG", "PNG", "WEBP"}
+MEDIA_TYPES = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
 
 
-def _ensure_upload_dir() -> Path:
-    path = settings.upload_path
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+@dataclass(frozen=True)
+class ValidatedImage:
+    key: str
+    data: bytes
+    media_type: str
 
 
-async def validate_and_store_image(upload: UploadFile) -> str:
+async def validate_image_upload(upload: UploadFile) -> ValidatedImage:
     """
-    Validate image content and persist it.
+    Validate image content and prepare it for persistence.
 
     :param upload: The FastAPI UploadFile from the multipart request.
-    :returns: A relative storage key (e.g. "abc123.jpg") for use in the DB.
+    :returns: Validated bytes, detected media type, and an opaque identifier.
     :raises InvalidImageError: File is invalid, unsupported, or too large.
-    :raises StorageError: Disk write failed.
     """
+    settings = get_settings()
     # ── 1. Size check (early reject before reading body fully) ────────────────
     # FastAPI / Starlette buffers up to the configured limit; we still check.
     raw = await upload.read(settings.max_upload_size_bytes + 1)
@@ -65,7 +45,7 @@ async def validate_and_store_image(upload: UploadFile) -> str:
     try:
         img = Image.open(io.BytesIO(raw))
         img.verify()  # checks for truncated / corrupt files
-    except (UnidentifiedImageError, Exception) as exc:
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
         raise InvalidImageError(
             f"File is not a valid image or is corrupt. ({type(exc).__name__})"
         ) from exc
@@ -78,59 +58,9 @@ async def validate_and_store_image(upload: UploadFile) -> str:
             f"Accepted formats: JPEG, PNG, WebP."
         )
 
-    # ── 3. Generate a safe, unique filename ───────────────────────────────────
-    # Use UUID4 to prevent collisions and avoid exposing original filename.
-    ext_map = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp"}
-    ext = ext_map[img.format]
-    filename = f"{uuid.uuid4().hex}.{ext}"
-
-    # ── 4. Write to disk ──────────────────────────────────────────────────────
-    upload_dir = _ensure_upload_dir()
-    dest = upload_dir / filename
-
-    # Safety: confirm resolved path is inside upload dir (path-traversal guard)
-    try:
-        dest.resolve().relative_to(upload_dir.resolve())
-    except ValueError:
-        raise StorageError("Invalid storage path detected.")
-
-    try:
-        dest.write_bytes(raw)
-    except OSError as exc:
-        logger.error("Failed to write image to disk: %s", exc)
-        raise StorageError("Image could not be saved to disk.") from exc
-
-    logger.info("Stored image: key=%s size=%d bytes", filename, len(raw))
-    return filename
-
-
-def delete_image(image_key: str) -> None:
-    """
-    Delete a stored image by its storage key.
-
-    Silently ignores missing files (idempotent cleanup).
-    Never raises — used in rollback paths.
-    """
-    if not image_key:
-        return
-    path = settings.upload_path / image_key
-    try:
-        path.unlink(missing_ok=True)
-        logger.info("Deleted image: key=%s", image_key)
-    except OSError as exc:
-        logger.warning("Could not delete image key=%s: %s", image_key, exc)
-
-
-def get_image_path(image_key: str) -> Path:
-    """
-    Return the absolute path for an image key.
-
-    :raises FileNotFoundError: if the file does not exist on disk.
-    """
-    path = (settings.upload_path / image_key).resolve()
-    # Path-traversal guard
-    if not path.is_relative_to(settings.upload_path.resolve()):
-        raise FileNotFoundError("Invalid image path.")
-    if not path.exists():
-        raise FileNotFoundError(f"Image not found on disk: {image_key}")
-    return path
+    # Use an opaque ID so the original filename is not exposed.
+    return ValidatedImage(
+        key=uuid.uuid4().hex,
+        data=raw,
+        media_type=MEDIA_TYPES[img.format],
+    )

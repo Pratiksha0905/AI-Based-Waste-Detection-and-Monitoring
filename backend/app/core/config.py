@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,8 +37,12 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    # ── File storage ──────────────────────────────────────────────────────────
-    upload_dir: str = "uploads"
+    # ── Legacy image migration source ─────────────────────────────────────────
+    # Used only to import old filesystem images; new images are database-backed.
+    legacy_upload_dir: str = Field(
+        default="uploads",
+        validation_alias=AliasChoices("LEGACY_UPLOAD_DIR", "UPLOAD_DIR"),
+    )
     max_upload_size_mb: int = 20
 
     @property
@@ -46,8 +50,8 @@ class Settings(BaseSettings):
         return self.max_upload_size_mb * 1024 * 1024
 
     @property
-    def upload_path(self) -> Path:
-        return Path(self.upload_dir)
+    def legacy_upload_path(self) -> Path:
+        return Path(self.legacy_upload_dir)
 
     # ── AI model ──────────────────────────────────────────────────────────────
     model_path: str = ""

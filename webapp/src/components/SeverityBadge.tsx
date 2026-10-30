@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Severity } from '../types/observation';
+import type { Severity } from '../api/endpoints';
 import { severityBg, severityDot, severityLabel, getSeverityAriaLabel } from '../utils/display';
 
 interface SeverityBadgeProps {

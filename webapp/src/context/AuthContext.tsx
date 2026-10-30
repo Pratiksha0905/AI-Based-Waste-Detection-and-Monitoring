@@ -20,6 +20,7 @@ import { setToken } from '../api/client';
 interface AuthContextValue {
   user: UserProfile | null;
   isLoading: boolean;
+  authError: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   register: (name: string, email: string, password: string) => Promise<void>;
@@ -29,20 +30,20 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => Boolean(localStorage.getItem('ecowatch_token')));
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  // On mount, verify stored token and fetch profile
   useEffect(() => {
     const token = localStorage.getItem('ecowatch_token');
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
+    if (!token) return;
     authApi
       .me()
-      .then(setUser)
-      .catch(() => {
-        localStorage.removeItem('ecowatch_token');
+      .then((profile) => {
+        setUser(profile);
+        setAuthError(null);
+      })
+      .catch((error: unknown) => {
+        setAuthError(error instanceof Error ? error.message : 'Unable to verify your session.');
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -50,13 +51,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const { access_token } = await authApi.login(email, password);
     setToken(access_token);
-    const profile = await authApi.me();
-    setUser(profile);
+    try {
+      const profile = await authApi.me();
+      setUser(profile);
+      setAuthError(null);
+    } catch (error) {
+      localStorage.removeItem('ecowatch_token');
+      throw error;
+    }
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('ecowatch_token');
     setUser(null);
+    setAuthError(null);
   }, []);
 
   const register = useCallback(
@@ -68,7 +76,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, register }}>
+    <AuthContext.Provider value={{ user, isLoading, authError, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Menu, FlaskConical } from 'lucide-react';
+import { Menu, ShieldCheck, UserRound } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
   title: string;
@@ -8,6 +9,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
+  const { user } = useAuth();
   return (
     <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-3 flex-shrink-0 z-20">
       {/* Mobile hamburger */}
@@ -31,10 +33,11 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
         )}
       </div>
 
-      {/* Demo mode indicator */}
-      <div className="demo-banner flex-shrink-0" role="status" aria-label="Application is running in demo mode with simulated data">
-        <FlaskConical size={12} aria-hidden="true" />
-        <span>DEMO MODE</span>
+      <div className="hidden sm:flex items-center gap-2 rounded-full bg-gray-50 border border-gray-200 px-3 py-1.5">
+        {user?.role === 'admin'
+          ? <ShieldCheck size={14} className="text-emerald-700" aria-hidden="true" />
+          : <UserRound size={14} className="text-gray-500" aria-hidden="true" />}
+        <span className="text-xs font-medium text-gray-600 capitalize">{user?.role}</span>
       </div>
     </header>
   );

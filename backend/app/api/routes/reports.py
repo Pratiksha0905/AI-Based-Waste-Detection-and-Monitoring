@@ -6,12 +6,14 @@ import math
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user, require_admin
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.session import get_db
+from app.models.report import Report
 from app.models.user import User
 from app.schemas.report import (
     PaginatedReports,
@@ -21,7 +23,6 @@ from app.schemas.report import (
     ReviewStatusUpdate,
 )
 from app.services import report_service
-from app.services.image_storage_service import get_image_path
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -158,16 +159,14 @@ async def get_image(
     Access is controlled by the same ownership rules as /reports/{id}.
     """
     report = await report_service.get_report_for_user(db, report_id, current_user)
-    try:
-        path = get_image_path(report.image_key)
-    except FileNotFoundError:
+    image_result = await db.execute(
+        select(Report.image_data, Report.image_media_type).where(Report.id == report_id)
+    )
+    image_data, media_type = image_result.one()
+    if image_data is None or media_type is None:
         raise NotFoundError("Image file")
 
-    return FileResponse(
-        path=str(path),
-        media_type="image/jpeg",  # FileResponse will detect actual type
-        filename=report.image_key,
-    )
+    return Response(content=image_data, media_type=media_type)
 
 
 # ── Retry inference ───────────────────────────────────────────────────────────

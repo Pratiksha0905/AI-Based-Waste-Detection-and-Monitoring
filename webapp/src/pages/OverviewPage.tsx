@@ -1,379 +1,195 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertCircle, ClipboardList, MapPin, ScanSearch, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
-  BarChart3,
-  AlertTriangle,
-  Images,
-  MapPin,
-  Droplets,
-  TrendingUp,
-  Clock,
-  ChevronRight,
-} from 'lucide-react';
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Legend,
 } from 'recharts';
+import { dashboardApi, reportsApi, type DashboardStats, type ReportSummary, type TrendPoint } from '../api/endpoints';
+import { useAuth } from '../context/AuthContext';
+import { formatShortDate, formatTimestamp } from '../utils/display';
 
-import type { DashboardSummary } from '../types/observation';
-import { MOCK_OBSERVATIONS, MOCK_HOTSPOTS } from '../data/mockObservations';
-import { getDashboardSummary } from '../services/analysisService';
-import SeverityBadge from '../components/SeverityBadge';
-import {
-  formatTimestamp,
-  categoryColor,
-  severityColor,
-  capitalise,
-} from '../utils/display';
-import { useNavigate } from 'react-router-dom';
-
-// ── Metric Card ───────────────────────────────────────────────────────────────
-
-interface MetricCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  description: string;
-  iconBg?: string;
-  simulated?: boolean;
-}
-
-const MetricCard: React.FC<MetricCardProps> = ({
-  icon,
-  label,
-  value,
-  description,
-  iconBg = 'bg-gray-100',
-  simulated,
-}) => (
-  <div className="metric-card fade-in">
-    <div className="flex items-start justify-between">
-      <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center flex-shrink-0`}>
-        {icon}
-      </div>
-      {simulated && (
-        <span className="text-[10px] font-medium text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full">
-          Simulated
-        </span>
-      )}
-    </div>
-    <div className="mt-3">
-      <div className="text-2xl font-bold text-gray-900 leading-none">{value}</div>
-      <div className="text-xs font-medium text-gray-500 mt-1">{label}</div>
-    </div>
-    <p className="text-[11px] text-gray-400 leading-snug mt-1">{description}</p>
-  </div>
-);
-
-// ── Custom Tooltip ─────────────────────────────────────────────────────────────
-
-const CustomPieTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ name: string; value: number }> }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-        <p className="font-semibold text-gray-800">{payload[0].name}</p>
-        <p className="text-gray-600">{payload[0].value} detections</p>
-      </div>
-    );
-  }
-  return null;
-};
-
-const CustomBarTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs">
-        <p className="font-semibold text-gray-800">{label}</p>
-        <p className="text-gray-600">{payload[0].value} observations</p>
-      </div>
-    );
-  }
-  return null;
-};
-
-// ── Overview Page ─────────────────────────────────────────────────────────────
-
-const OverviewPage: React.FC = () => {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    getDashboardSummary().then((s) => {
-      setSummary(s);
-      setLoading(false);
-    });
-  }, []);
-
-  const recentObs = MOCK_OBSERVATIONS.slice(0, 5);
-  const topHotspots = MOCK_HOTSPOTS.slice(0, 4);
-
-  // Build severity bar data
-  const severityData = summary?.severityDistribution.map((s) => ({
-    name: capitalise(s.severity),
-    count: s.count,
-  })) ?? [];
-
+function Metric({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
   return (
-    <div className="p-5 max-w-7xl mx-auto space-y-6">
-      {/* ── Simulated data notice ──────────────────────────────────────────── */}
-      <div className="flex items-start gap-2 px-4 py-3 bg-violet-50 border border-violet-200 rounded-xl text-xs text-violet-700">
-        <span className="mt-0.5 flex-shrink-0">ℹ</span>
-        <span>
-          All metrics and observations displayed on this page are <strong>simulated demonstration data</strong>.
-          The real AI pipeline (YOLOv8n + MiDaS) is not yet connected.
-        </span>
+    <div className="metric-card">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-gray-500">{label}</p>
+        <span className="text-emerald-700">{icon}</span>
       </div>
-
-      {/* ── Metric cards ──────────────────────────────────────────────────── */}
-      {loading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="metric-card">
-              <div className="skeleton w-9 h-9 rounded-lg" />
-              <div className="skeleton h-7 w-20 mt-3 rounded" />
-              <div className="skeleton h-3 w-16 mt-1 rounded" />
-            </div>
-          ))}
-        </div>
-      ) : summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <MetricCard
-            icon={<Images size={18} className="text-blue-600" />}
-            iconBg="bg-blue-50"
-            label="Analyzed Images"
-            value={summary.totalImages}
-            description="Demo observation records in the dataset"
-          />
-          <MetricCard
-            icon={<BarChart3 size={18} className="text-emerald-600" />}
-            iconBg="bg-emerald-50"
-            label="Detected Objects"
-            value={summary.totalDetections}
-            description="Illustrative waste-object detections"
-            simulated
-          />
-          <MetricCard
-            icon={<AlertTriangle size={18} className="text-orange-600" />}
-            iconBg="bg-orange-50"
-            label="High-Severity"
-            value={summary.highSeverityCount}
-            description="High or critical severity observations"
-          />
-          <MetricCard
-            icon={<MapPin size={18} className="text-red-600" />}
-            iconBg="bg-red-50"
-            label="Potential Hotspots"
-            value={summary.potentialHotspots}
-            description="Demo locations with repeated high severity"
-          />
-          <MetricCard
-            icon={<Droplets size={18} className="text-indigo-600" />}
-            iconBg="bg-indigo-50"
-            label="Est. Volume (L)"
-            value={`${summary.simulatedTotalVolumeLitres.toLocaleString()} L`}
-            description="Simulated total — not physically measured"
-            simulated
-          />
-        </div>
-      )}
-
-      {/* ── Charts row ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Category distribution */}
-        <div className="card fade-in">
-          <div className="card-header flex items-center gap-2">
-            <BarChart3 size={15} className="text-gray-400" />
-            <span className="section-title">Waste Category Distribution</span>
-            <span className="ml-auto text-[10px] text-violet-600 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded-full font-medium">Simulated</span>
-          </div>
-          <div className="card-body">
-            {summary && (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={summary.categoryDistribution.map(c => ({ name: c.category, value: c.count }))}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="value"
-                    aria-label="Waste category pie chart"
-                  >
-                    {summary.categoryDistribution.map((entry) => (
-                      <Cell key={entry.category} fill={categoryColor(entry.category)} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomPieTooltip />} />
-                  <Legend
-                    formatter={(value) => (
-                      <span className="text-xs text-gray-600">{value}</span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Severity distribution */}
-        <div className="card fade-in">
-          <div className="card-header flex items-center gap-2">
-            <AlertTriangle size={15} className="text-gray-400" />
-            <span className="section-title">Severity Distribution</span>
-          </div>
-          <div className="card-body">
-            {summary && (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={severityData} barSize={36}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip content={<CustomBarTooltip />} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {severityData.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={
-                          entry.name === 'Low' ? '#10b981' :
-                          entry.name === 'Medium' ? '#f59e0b' :
-                          entry.name === 'High' ? '#f97316' : '#ef4444'
-                        }
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Bottom row ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Recent observations */}
-        <div className="card fade-in">
-          <div className="card-header flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock size={15} className="text-gray-400" />
-              <span className="section-title">Recent Observations</span>
-            </div>
-            <button
-              onClick={() => navigate('/history')}
-              className="text-xs text-emerald-700 font-medium hover:underline flex items-center gap-1"
-            >
-              View all <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {recentObs.map((obs) => (
-              <div
-                key={obs.id}
-                className="px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => navigate('/history')}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {obs.imageName}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {obs.location.name} · {obs.detections.length} detection{obs.detections.length !== 1 ? 's' : ''}
-                    </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      {formatTimestamp(obs.timestamp)}
-                    </p>
-                  </div>
-                  <SeverityBadge severity={obs.severity} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Hotspot preview */}
-        <div className="card fade-in">
-          <div className="card-header flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <MapPin size={15} className="text-gray-400" />
-              <span className="section-title">Potential Hotspots</span>
-            </div>
-            <button
-              onClick={() => navigate('/map')}
-              className="text-xs text-emerald-700 font-medium hover:underline flex items-center gap-1"
-            >
-              Open map <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {topHotspots.map((hs) => (
-              <div
-                key={hs.id}
-                className="px-5 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => navigate('/map')}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-800 truncate">
-                        {hs.locationName}
-                      </p>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {hs.district} · {hs.observationCount} observations · {hs.totalDetections} detections
-                    </p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
-                      Dominant: {hs.dominantCategory}
-                    </p>
-                  </div>
-                  <SeverityBadge severity={hs.severity} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Recent activity ────────────────────────────────────────────────── */}
-      <div className="card fade-in">
-        <div className="card-header flex items-center gap-2">
-          <TrendingUp size={15} className="text-gray-400" />
-          <span className="section-title">Recent Activity</span>
-        </div>
-        <div className="card-body">
-          <ol className="relative border-l border-gray-200 space-y-4 ml-2" aria-label="Activity timeline">
-            {MOCK_OBSERVATIONS.slice(0, 6).map((obs) => (
-              <li key={obs.id} className="ml-4">
-                <div className={`absolute w-2.5 h-2.5 rounded-full -left-1.5 mt-1 ${
-                  obs.severity === 'critical' ? 'bg-red-500' :
-                  obs.severity === 'high' ? 'bg-orange-500' :
-                  obs.severity === 'medium' ? 'bg-amber-500' : 'bg-emerald-500'
-                }`} aria-hidden="true" />
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-sm text-gray-700">
-                    <span className="font-medium">{obs.detections.length}</span> waste object{obs.detections.length !== 1 ? 's' : ''} detected
-                    at <span className={`font-medium ${severityColor(obs.severity)}`}>{obs.location.name}</span>
-                  </p>
-                  <time className="text-[11px] text-gray-400 flex-shrink-0" dateTime={obs.timestamp}>
-                    {formatTimestamp(obs.timestamp)}
-                  </time>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
+      <p className="mt-2 text-2xl font-semibold text-gray-900">{value}</p>
     </div>
   );
-};
+}
 
-export default OverviewPage;
+function StatusList({ title, items }: { title?: string; items: Array<{ status: string; count: number }> }) {
+  if (!items.length) return <p className="text-sm text-gray-500">No status data.</p>;
+  return (
+    <div className="space-y-3">
+      {title && <h3 className="section-title">{title}</h3>}
+      {items.map(({ status, count }) => (
+        <div key={status} className="flex items-center justify-between gap-3 text-sm">
+          <span className="capitalize text-gray-600">{status.replaceAll('_', ' ')}</span>
+          <span className="font-semibold text-gray-900">{count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function OverviewPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recent, setRecent] = useState<ReportSummary[]>([]);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [userTotal, setUserTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const request = isAdmin
+      ? Promise.all([dashboardApi.stats(), dashboardApi.trends(14), reportsApi.allReports(1, 5)])
+          .then(([dashboard, trends, reports]) => {
+            if (!active) return;
+            setStats(dashboard);
+            setTrend(trends.observations_by_date);
+            setRecent(reports.items);
+          })
+      : reportsApi.myReports(1, 5).then((reports) => {
+          if (!active) return;
+          setRecent(reports.items);
+          setUserTotal(reports.total);
+        });
+    request
+      .catch((requestError: unknown) => {
+        if (active) setError(requestError instanceof Error ? requestError.message : 'Unable to load dashboard data.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [isAdmin]);
+
+  if (loading) {
+    return (
+      <div className="p-5 max-w-7xl mx-auto">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => <div key={index} className="metric-card skeleton h-28" />)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 max-w-7xl mx-auto space-y-5">
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />{error}
+        </div>
+      )}
+
+      {isAdmin && stats ? (
+        <>
+          {!stats.model_available && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              AI detection is unavailable because no model checkpoint is configured. Submitted reports and counts below are real backend records.
+            </div>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Total reports" value={stats.total_reports} icon={<ClipboardList size={18} />} />
+            <Metric label="Reports today" value={stats.reports_today} icon={<ScanSearch size={18} />} />
+            <Metric label="Active hotspots" value={stats.hotspot_count} icon={<MapPin size={18} />} />
+            <Metric label="Reporters" value={stats.distinct_reporters} icon={<Users size={18} />} />
+          </div>
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.7fr)]">
+            <section className="card">
+              <div className="card-header">
+                <h2 className="section-title">Report submissions</h2>
+                <p className="section-subtitle">Daily counts for the last 14 days</p>
+              </div>
+              <div className="card-body">
+                {trend.some((point) => point.count > 0) ? (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={trend.map((point) => ({ ...point, date: formatShortDate(point.date) }))}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#edf0ed" />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" name="Reports" fill="#16845b" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : <p className="py-12 text-center text-sm text-gray-500">No reports were submitted during this period.</p>}
+              </div>
+            </section>
+            <section className="card">
+              <div className="card-header"><h2 className="section-title">Processing status</h2></div>
+              <div className="card-body">
+                <StatusList title="" items={stats.by_processing_status} />
+                <div className="mt-6 border-t border-gray-100 pt-4">
+                  <StatusList title="Review status" items={stats.by_review_status} />
+                </div>
+                <div className="mt-6 border-t border-gray-100 pt-4 text-sm">
+                  <p className="text-gray-500">AI detections</p>
+                  <p className="mt-1 font-semibold text-gray-900">{stats.total_detections ?? 'Unavailable'}</p>
+                </div>
+              </div>
+            </section>
+          </div>
+          <div className="card">
+            <div className="card-header flex items-center justify-between">
+              <h2 className="section-title">Latest reports</h2>
+              <Link className="text-sm font-medium text-emerald-800 hover:underline" to="/admin/reports">Manage all</Link>
+            </div>
+            <ReportList items={recent} emptyMessage="No reports have been submitted." />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 sm:flex sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-emerald-950">Welcome, {user?.name}</h2>
+              <p className="mt-1 text-sm text-emerald-900">Submit waste observations and follow their processing and review status.</p>
+            </div>
+            <Link className="btn-primary mt-4 justify-center sm:mt-0" to="/analysis">Submit a report</Link>
+          </div>
+          <Metric label="Your submitted reports" value={userTotal} icon={<ClipboardList size={18} />} />
+          <section className="card">
+            <div className="card-header flex items-center justify-between">
+              <h2 className="section-title">Recent reports</h2>
+              <Link className="text-sm font-medium text-emerald-800 hover:underline" to="/history">View all</Link>
+            </div>
+            <ReportList items={recent} emptyMessage="You have not submitted any reports yet." />
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReportList({ items, emptyMessage }: { items: ReportSummary[]; emptyMessage: string }) {
+  if (!items.length) return <p className="p-5 text-sm text-gray-500">{emptyMessage}</p>;
+  return (
+    <ul className="divide-y divide-gray-100">
+      {items.map((report) => (
+        <li key={report.id} className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-800">{formatTimestamp(report.submitted_at)}</p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {report.latitude.toFixed(5)}, {report.longitude.toFixed(5)} · {report.detection_count} detections
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs capitalize text-gray-600">{report.processing_status}</span>
+            <Link className="text-sm font-medium text-emerald-800 hover:underline" to={`/reports/${report.id}`}>Details</Link>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}

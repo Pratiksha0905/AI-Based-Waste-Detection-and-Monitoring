@@ -1,123 +1,56 @@
-# EcoWatch AI — webapp
+# EcoWatch AI frontend
 
-**Smart City Waste Intelligence** — Frontend prototype for the AI-Based Waste Detection and Monitoring project.
+The React application connects to the FastAPI backend in `../backend`. It uses real account, report, hotspot, and admin analytics data; it does not include mock reports or AI results.
 
-> **DEMO MODE:** All data displayed is simulated. The real YOLOv8n detection model and MiDaS depth estimation model are not yet connected.
+## Run locally
 
----
+Use Node.js 20.19+ or 22.12+.
 
-## Quick Start
+```powershell
+# Terminal 1
+cd backend
+python -m uvicorn app.main:app --reload
 
-```bash
-# From the webapp/ directory:
+# Terminal 2
+cd webapp
 npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+The frontend defaults to `http://localhost:8000` for the API, matching the backend development server. To use a different backend, set `VITE_API_URL` in a `webapp/.env` file.
 
----
-
-## Available Commands
+## Commands
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start the development server (hot reload) |
-| `npm run build` | Build production bundle into `dist/` |
-| `npm run preview` | Preview production build locally |
-| `npx tsc --noEmit` | TypeScript type check (no output) |
-| `npm run lint` | Run ESLint |
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Type-check and create the production bundle |
+| `npm run lint` | Run Oxlint |
+| `npm run preview` | Preview the production bundle |
 
----
+## Roles and routes
 
-## Project Structure
+- Users can submit reports with an image and a map-selected location, see their reports, open report details, view actual detections when available, and retry failed analysis.
+- Admins can view system statistics, list and filter all reports, update review status, see real hotspot clusters, and view analytics available from the API.
+- Admin-only pages are protected in the frontend and by backend authorization.
 
-```
-webapp/
-  public/
-    favicon.svg
-  src/
-    components/           Shared UI components
-      AppShell.tsx        Main layout: sidebar + header + outlet
-      Header.tsx          Top bar with page title and DEMO MODE badge
-      Sidebar.tsx         Navigation sidebar (desktop + mobile drawer)
-      SeverityBadge.tsx   Reusable severity indicator
-    data/
-      mockObservations.ts 15 demo observations, 6 hotspots, time-series data
-    pages/
-      OverviewPage.tsx    City dashboard: metrics, charts, recent activity
-      ImageAnalysisPage.tsx  Image upload + demo AI analysis workflow
-      HotspotMapPage.tsx  Interactive Leaflet map with severity markers
-      AnalyticsPage.tsx   Recharts analytics with line, bar, and pie charts
-      HistoryPage.tsx     Searchable, sortable table with detail panel
-      AboutPage.tsx       Tech stack + future integration documentation
-    services/
-      analysisService.ts  Mock data service — future API integration boundary
-    types/
-      observation.ts      Core TypeScript types (integration contract)
-    utils/
-      display.ts          Severity colors, formatting, accessibility helpers
-    App.tsx               React Router configuration
-    main.tsx              React 19 entry point
-    index.css             Tailwind CSS v4 design system
-  index.html
-  vite.config.ts
-  tsconfig.json
-  package.json
-```
+## Backend integration
 
----
+The centralized API wrappers are in `src/api/endpoints.ts`; authenticated requests are handled by `src/api/client.ts`.
+Uploaded report images are stored as database BLOBs by the backend, alongside their report metadata. SQLite startup upgrades existing report tables and imports any available legacy images from `LEGACY_UPLOAD_DIR` (default: `uploads`) once; new submissions never create or write to that directory. For non-SQLite deployments, run `alembic upgrade head` from `backend/` before starting the updated API.
 
-## Pages
-
-| Page | Route | Description |
-|---|---|---|
-| Overview | `/` | Dashboard with metrics, category and severity charts, recent observations |
-| Image Analysis | `/analysis` | Drag-and-drop upload with demo detection, depth, calibration, volume |
-| Hotspot Map | `/map` | Interactive Leaflet map with severity-based markers and filters |
-| Analytics | `/analytics` | Time-series charts for observations and simulated volume |
-| Observation History | `/history` | Searchable, sortable table with detail side panel |
-| About | `/about` | Integration documentation and setup guide |
-
----
-
-## Future AI Integration
-
-The integration boundary is `src/services/analysisService.ts`. Each function returns mock data now. Replace the function bodies with real API calls when the backend is available:
-
-| Mock Function | Future API Endpoint |
+| Feature | Backend endpoint |
 |---|---|
-| `analyzeImage(file)` | `POST /api/analyze` (multipart/form-data) |
-| `getObservations(filters)` | `GET /api/observations` |
-| `getObservationById(id)` | `GET /api/observations/:id` |
-| `getDashboardSummary()` | `GET /api/dashboard/summary` |
-| `getHotspots(filters)` | `GET /api/hotspots` |
-| `getAnalytics(filters)` | `GET /api/analytics` |
+| Register, login, current profile | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me` |
+| Submit report | `POST /api/reports` (`multipart/form-data`: `image`, `latitude`, `longitude`, optional `description`) |
+| User reports / admin reports | `GET /api/reports/my`, `GET /api/reports` |
+| Report details, image, retry, review update | `GET /api/reports/{id}`, `GET /api/reports/{id}/image`, `POST /api/reports/{id}/retry`, `PATCH /api/reports/{id}/status` |
+| Hotspots | `GET /api/hotspots` |
+| Admin dashboard and trends | `GET /api/dashboard/stats`, `GET /api/dashboard/trends` |
+| Health and model status | `GET /api/health`, `GET /api/health/model` |
 
-The real AI pipeline should return objects conforming to the TypeScript interfaces in `src/types/observation.ts`:
+## AI and measurement limitations
 
-- `Detection` — category, confidence, bounding box, relative depth
-- `DepthResult` — min/max/mean relative depth from MiDaS
-- `CalibrationInfo` — calibration status and reference availability
-- `VolumeEstimate` — estimated volume and method details
+The backend returns genuine YOLO detections only when its checkpoint is configured. Without a checkpoint, reports remain pending or fail with the backend's processing status and explanation; the frontend never invents detections or confidence values. The current report API does not expose MiDaS depth, camera calibration, or volume estimates, so those measurements are not presented as available features.
 
-### Planned AI Pipeline
-
-- **YOLOv8n** — Waste detection and classification
-- **MiDaS** — Monocular depth estimation
-- **Calibration** — Camera scale estimation
-- **Volume** — Geometric estimation from depth and detection
-
----
-
-## Requirements
-
-- Node.js 18 or later
-- No GPU, Python, model weights, or external API required
-- Internet connection needed only for OpenStreetMap tiles on the Hotspot Map page
-
----
-
-## Repository Isolation
-
-This `webapp/` directory is entirely self-contained. No files outside this directory were modified during its creation.
+The hotspot map and chart tiles use OpenStreetMap. Report counts, locations, categories, and chart values come from backend responses.

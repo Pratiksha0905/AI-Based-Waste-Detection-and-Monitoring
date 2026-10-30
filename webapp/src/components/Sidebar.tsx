@@ -9,7 +9,9 @@ import {
   Info,
   Leaf,
   X,
+  LogOut,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface NavItem {
   label: string;
@@ -17,20 +19,29 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { label: 'Overview', to: '/', icon: <LayoutDashboard size={18} /> },
-  { label: 'Image Analysis', to: '/analysis', icon: <ScanSearch size={18} /> },
-  { label: 'Hotspot Map', to: '/map', icon: <MapPin size={18} /> },
-  { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={18} /> },
-  { label: 'Observation History', to: '/history', icon: <ClipboardList size={18} /> },
-];
-
 interface SidebarProps {
   onClose?: () => void;
   isMobile?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onClose, isMobile }) => {
+  const { user, logout } = useAuth();
+  const navItems: NavItem[] = [
+    { label: 'Dashboard', to: '/', icon: <LayoutDashboard size={18} /> },
+    ...(user?.role === 'admin'
+      ? [{ label: 'All reports', to: '/admin/reports', icon: <ClipboardList size={18} /> }]
+      : [
+          { label: 'Submit report', to: '/analysis', icon: <ScanSearch size={18} /> },
+          { label: 'My reports', to: '/history', icon: <ClipboardList size={18} /> },
+        ]),
+    ...(user?.role === 'admin'
+      ? [
+          { label: 'Hotspot map', to: '/map', icon: <MapPin size={18} /> },
+          { label: 'Analytics', to: '/analytics', icon: <BarChart3 size={18} /> },
+        ]
+      : []),
+  ];
+
   return (
     <div className="sidebar h-full select-none">
       {/* Logo / Brand */}
@@ -66,7 +77,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, isMobile }) => {
             Navigation
           </p>
         </div>
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -95,11 +106,18 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, isMobile }) => {
           <span>About &amp; Integration</span>
         </NavLink>
         <div className="mt-3 mx-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-          <p className="text-[10px] text-white/40 leading-relaxed">
-            <span className="text-violet-300 font-semibold">DEMO MODE</span>
-            {' '}— All data is simulated. YOLOv8n and MiDaS are not yet connected.
-          </p>
+          <p className="text-xs font-medium text-white truncate">{user?.name}</p>
+          <p className="text-[10px] text-white/45 truncate">{user?.email}</p>
+          <p className="text-[10px] text-emerald-300 mt-1 capitalize">{user?.role} account</p>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          className="sidebar-nav-item w-[calc(100%-1rem)] text-left text-xs"
+        >
+          <LogOut size={15} />
+          <span>Sign out</span>
+        </button>
       </div>
     </div>
   );

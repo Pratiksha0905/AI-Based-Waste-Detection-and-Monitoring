@@ -24,7 +24,7 @@ from app.core.exceptions import ForbiddenError, ModelUnavailableError, NotFoundE
 from app.models.report import Detection, Report
 from app.models.user import User
 from app.schemas.report import ReportCreate, ReviewStatusUpdate
-from app.services.image_storage_service import delete_image, validate_and_store_image
+from app.services.image_storage_service import validate_image_upload
 from app.services.model_service import model_service
 
 logger = logging.getLogger(__name__)
@@ -46,13 +46,15 @@ async def create_report(
       3. Commit.
       4. Schedule inference via FastAPI BackgroundTasks (bound to request lifecycle).
     """
-    # Step 1 — image validation and storage
-    image_key = await validate_and_store_image(upload)
+    # Step 1 — validate the upload before saving its bytes in the report row.
+    image = await validate_image_upload(upload)
 
     # Step 2 — create DB row
     report = Report(
         user_id=user.id,
-        image_key=image_key,
+        image_key=image.key,
+        image_data=image.data,
+        image_media_type=image.media_type,
         latitude=payload.latitude,
         longitude=payload.longitude,
         description=payload.description,
@@ -66,7 +68,6 @@ async def create_report(
         await db.refresh(report)
     except Exception as exc:
         await db.rollback()
-        delete_image(image_key)
         logger.error("DB commit failed for new report: %s", exc)
         raise
 
@@ -80,15 +81,15 @@ async def create_report(
 
     # Step 3 — schedule background inference
     if background_tasks is not None:
-        background_tasks.add_task(_run_inference_sync, report.id, image_key)
+        background_tasks.add_task(_run_inference_sync, report.id)
     else:
         # Fallback for direct service calls (tests, CLI)
-        asyncio.ensure_future(_run_inference(report.id, image_key))
+        asyncio.ensure_future(_run_inference(report.id))
 
     return report
 
 
-def _run_inference_sync(report_id: str, image_key: str) -> None:
+def _run_inference_sync(report_id: str) -> None:
     """
     Synchronous wrapper used by FastAPI BackgroundTasks.
     Runs the async inference coroutine in a new event loop.
@@ -96,12 +97,12 @@ def _run_inference_sync(report_id: str, image_key: str) -> None:
     import asyncio
     loop = asyncio.new_event_loop()
     try:
-        loop.run_until_complete(_run_inference(report_id, image_key))
+        loop.run_until_complete(_run_inference(report_id))
     finally:
         loop.close()
 
 
-async def _run_inference(report_id: str, image_key: str) -> None:
+async def _run_inference(report_id: str) -> None:
     """
     Run model inference in a background task.
 
@@ -110,8 +111,6 @@ async def _run_inference(report_id: str, image_key: str) -> None:
     The report and image are always preserved.
     """
     from app.db.session import AsyncSessionLocal
-    from app.services.image_storage_service import get_image_path
-
     async with AsyncSessionLocal() as db:
         try:
             # Mark as processing
@@ -122,9 +121,12 @@ async def _run_inference(report_id: str, image_key: str) -> None:
             )
             await db.commit()
 
-            # Read image bytes
-            img_path = get_image_path(image_key)
-            raw = img_path.read_bytes()
+            # Fetch the deferred BLOB only for inference; list queries avoid loading it.
+            raw = (
+                await db.execute(select(Report.image_data).where(Report.id == report_id))
+            ).scalar_one_or_none()
+            if raw is None:
+                raise NotFoundError("Report image")
 
             # Run inference (sync — model_service.run_inference is synchronous)
             result = await asyncio.get_event_loop().run_in_executor(
@@ -318,8 +320,8 @@ async def retry_inference(
     report = refreshed.scalar_one()
 
     if background_tasks is not None:
-        background_tasks.add_task(_run_inference_sync, report_id, report.image_key)
+        background_tasks.add_task(_run_inference_sync, report_id)
     else:
-        asyncio.ensure_future(_run_inference(report_id, report.image_key))
+        asyncio.ensure_future(_run_inference(report_id))
 
     return report

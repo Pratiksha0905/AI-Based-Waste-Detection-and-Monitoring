@@ -14,8 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -35,8 +35,12 @@ class Report(Base):
     )
 
     # ── Image storage ──────────────────────────────────────────────────────────
-    # Relative path within UPLOAD_DIR, e.g. "2024/10/abc123.jpg"
+    # Opaque identifier retained for API compatibility; image bytes live in the DB.
     image_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    image_data: Mapped[Optional[bytes]] = deferred(
+        mapped_column(LargeBinary, nullable=True)
+    )
+    image_media_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     # ── Location ───────────────────────────────────────────────────────────────
     latitude: Mapped[float] = mapped_column(Float, nullable=False)

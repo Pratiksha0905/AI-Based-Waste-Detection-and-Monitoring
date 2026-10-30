@@ -27,19 +27,34 @@ function buildHeaders(extra: Record<string, string> = {}): Record<string, string
   return headers;
 }
 
+function expireSession(): void {
+  const hadToken = Boolean(getToken());
+  clearToken();
+  if (hadToken && window.location.pathname !== '/login') {
+    window.location.assign('/login?expired=1');
+  }
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (res.status === 401) {
-    clearToken();
-    window.location.href = '/login';
+    expireSession();
     throw new Error('Unauthenticated');
   }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      detail = body.detail ?? detail;
+      const message: unknown = body.detail;
+      if (typeof message === 'string') {
+        detail = message;
+      } else if (Array.isArray(message)) {
+        const messages = message
+          .map((item: { msg?: string }) => item.msg)
+          .filter((item: unknown): item is string => typeof item === 'string');
+        detail = messages.join(', ') || detail;
+      }
     } catch {
-      // ignore parse errors
+      detail = res.statusText || detail;
     }
     throw new Error(detail);
   }
@@ -86,9 +101,11 @@ export async function apiGetRaw(path: string): Promise<Response> {
     headers: buildHeaders(),
   });
   if (res.status === 401) {
-    clearToken();
-    window.location.href = '/login';
+    expireSession();
     throw new Error('Unauthenticated');
+  }
+  if (!res.ok) {
+    throw new Error(`Image request failed (HTTP ${res.status})`);
   }
   return res;
 }

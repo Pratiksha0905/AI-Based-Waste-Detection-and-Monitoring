@@ -2,10 +2,9 @@
 EcoWatch AI — FastAPI application factory.
 
 Startup lifecycle:
-  1. Ensure upload directory exists.
-  2. Run database migrations (create tables) for SQLite dev only.
+  1. Run database schema setup for SQLite dev only.
      Production should use `alembic upgrade head` explicitly.
-  3. Log model availability.
+  2. Log model availability.
 """
 
 from __future__ import annotations
@@ -32,18 +31,18 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ───────────────────────────────────────────────────────────────
-    settings.upload_path.mkdir(parents=True, exist_ok=True)
-    logger.info("Upload directory: %s", settings.upload_path.resolve())
-
     # Auto-create tables in SQLite dev mode (migrations handle production)
     if "sqlite" in settings.database_url:
         from app.db.base import Base
         from app.db.session import engine
+        from app.db.image_migration import migrate_legacy_report_images
         import app.models  # noqa: F401 — register all ORM models
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            await migrate_legacy_report_images(conn, settings.legacy_upload_path)
         logger.info("SQLite tables created / verified.")
+        logger.info("Report images are stored in the database.")
 
     # Log model status
     from app.services.model_service import model_service

@@ -16,6 +16,9 @@ export interface UserProfile {
   created_at: string;
 }
 
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type ReviewStatus = 'pending_review' | 'reviewed' | 'resolved' | 'rejected';
+
 export interface TokenResponse {
   access_token: string;
   token_type: 'bearer';
@@ -41,8 +44,8 @@ export interface ReportOut {
   description?: string | null;
   submitted_at: string;
   updated_at: string;
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed';
-  review_status: 'pending_review' | 'reviewed' | 'resolved' | 'rejected';
+  processing_status: ProcessingStatus;
+  review_status: ReviewStatus;
   retry_count: number;
   processing_error?: string | null;
   detections: DetectionOut[];
@@ -55,8 +58,8 @@ export interface ReportSummary {
   longitude: number;
   description?: string | null;
   submitted_at: string;
-  processing_status: ReportOut['processing_status'];
-  review_status: ReportOut['review_status'];
+  processing_status: ProcessingStatus;
+  review_status: ReviewStatus;
   detection_count: number;
 }
 
@@ -78,6 +81,8 @@ export interface HotspotOut {
   dominant_category?: string | null;
   last_report_at?: string | null;
 }
+
+export type Severity = HotspotOut['severity'];
 
 export interface HotspotListResponse {
   items: HotspotOut[];
@@ -138,7 +143,7 @@ export const reportsApi = {
   myReports: (page = 1, pageSize = 20) =>
     apiGet<PaginatedReports>(`/api/reports/my?page=${page}&page_size=${pageSize}`),
 
-  allReports: (page = 1, pageSize = 20, processingStatus?: string, reviewStatus?: string) => {
+  allReports: (page = 1, pageSize = 20, processingStatus?: ProcessingStatus, reviewStatus?: ReviewStatus) => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (processingStatus) params.set('processing_status', processingStatus);
     if (reviewStatus) params.set('review_status', reviewStatus);
@@ -147,7 +152,7 @@ export const reportsApi = {
 
   getById: (id: string) => apiGet<ReportOut>(`/api/reports/${id}`),
 
-  updateStatus: (id: string, review_status: string) =>
+  updateStatus: (id: string, review_status: ReviewStatus) =>
     apiPatch<ReportOut>(`/api/reports/${id}/status`, { review_status }),
 
   retry: (id: string) =>

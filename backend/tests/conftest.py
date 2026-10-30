@@ -8,8 +8,6 @@ Each test gets a fresh database session in the same event loop.
 from __future__ import annotations
 
 import io
-import os
-
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -50,20 +48,6 @@ async def db(engine) -> AsyncSession:
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with Session() as session:
         yield session
-
-
-# ── Temporary upload directory ────────────────────────────────────────────────
-
-@pytest.fixture(autouse=True)
-def _tmp_uploads(tmp_path, monkeypatch):
-    """Point UPLOAD_DIR at a temporary directory for each test."""
-    from app.core import config as cfg_module
-
-    cfg_module.get_settings.cache_clear()
-    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
-    monkeypatch.setenv("DATABASE_URL", TEST_DB_URL)
-    yield tmp_path
-    cfg_module.get_settings.cache_clear()
 
 
 # ── ASGI test client ──────────────────────────────────────────────────────────
