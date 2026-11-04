@@ -24,6 +24,7 @@ from app.core.exceptions import ForbiddenError, ModelUnavailableError, NotFoundE
 from app.models.report import Detection, Report
 from app.models.user import User
 from app.schemas.report import ReportCreate, ReviewStatusUpdate
+from app.services.analysis_artifact_service import remove_analysis_generation
 from app.services.image_storage_service import validate_image_upload
 from app.services.model_service import model_service
 
@@ -112,7 +113,15 @@ async def _run_inference(report_id: str) -> None:
     """
     from app.db.session import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
+        result = None
+        previous_analysis = None
         try:
+            previous_analysis = (
+                await db.execute(
+                    select(Report.ai_analysis).where(Report.id == report_id)
+                )
+            ).scalar_one_or_none()
+
             # Mark as processing
             await db.execute(
                 update(Report)
@@ -130,7 +139,7 @@ async def _run_inference(report_id: str) -> None:
 
             # Run inference (sync — model_service.run_inference is synchronous)
             result = await asyncio.get_event_loop().run_in_executor(
-                None, model_service.run_inference, raw
+                None, model_service.run_inference, raw, report_id
             )
 
             # Replace any previous attempt output, then persist this attempt atomically.
@@ -138,6 +147,7 @@ async def _run_inference(report_id: str) -> None:
 
             detections = [
                 Detection(
+                    id=d.id,
                     report_id=report_id,
                     predicted_class=d.predicted_class,
                     confidence=d.confidence,
@@ -162,6 +172,15 @@ async def _run_inference(report_id: str) -> None:
                 )
             )
             await db.commit()
+            previous_artifacts = (
+                previous_analysis.get("artifacts")
+                if isinstance(previous_analysis, dict)
+                else None
+            )
+            if isinstance(previous_artifacts, dict):
+                old_generation = previous_artifacts.get("generation")
+                if old_generation != result.analysis.get("artifacts", {}).get("generation"):
+                    remove_analysis_generation(report_id, old_generation)
             logger.info(
                 "Inference complete for report %s: %d detections",
                 report_id,
@@ -183,6 +202,12 @@ async def _run_inference(report_id: str) -> None:
 
         except Exception as exc:
             await db.rollback()
+            if result is not None:
+                artifacts = result.analysis.get("artifacts")
+                if isinstance(artifacts, dict):
+                    remove_analysis_generation(
+                        report_id, artifacts.get("generation")
+                    )
             await db.execute(
                 update(Report)
                 .where(Report.id == report_id)
@@ -321,8 +346,6 @@ async def retry_inference(
 
     report.processing_status = "pending"
     report.processing_error = None
-    report.ai_analysis = None
-    report.detections.clear()
     report.retry_count += 1
     await db.commit()
 

@@ -16,6 +16,7 @@ env/
 
 # Uploads (user images — back up separately)
 uploads/
+generated_analysis/
 
 # Logs
 *.log

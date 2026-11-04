@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+import uuid
 
 import pytest
 from httpx import AsyncClient
@@ -199,3 +201,119 @@ class TestImageAccess:
             headers={"Authorization": f"Bearer {user_token}"},
         )
         assert r.status_code == 404
+
+
+class TestGeneratedAnalysisImages:
+    async def test_retry_keeps_previous_results_until_a_new_run_succeeds(
+        self,
+        client: AsyncClient,
+        user_token: str,
+        minimal_jpeg: bytes,
+        db: AsyncSession,
+    ):
+        from sqlalchemy import select
+
+        from app.models.report import Detection, Report
+
+        response = await _submit_report(client, user_token, minimal_jpeg)
+        report_id = response.json()["id"]
+        report = (
+            await db.execute(select(Report).where(Report.id == report_id))
+        ).scalar_one()
+        report.processing_status = "failed"
+        report.ai_analysis = {"severity": "Low", "artifacts": {"generation": "a" * 32}}
+        db.add(
+            Detection(
+                id=str(uuid.uuid4()),
+                report_id=report_id,
+                predicted_class="pile",
+                confidence=0.9,
+            )
+        )
+        await db.commit()
+
+        retry_response = await client.post(
+            f"/api/reports/{report_id}/retry",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert retry_response.status_code == 200
+        assert retry_response.json()["ai_analysis"]["severity"] == "Low"
+        assert len(retry_response.json()["detections"]) == 1
+
+    async def test_owner_can_get_generated_images_and_other_user_cannot(
+        self,
+        client: AsyncClient,
+        user_token: str,
+        admin_token: str,
+        minimal_jpeg: bytes,
+        db: AsyncSession,
+        tmp_path: Path,
+        monkeypatch,
+    ):
+        from sqlalchemy import select
+
+        from app.core.config import get_settings
+        from app.models.report import Report
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "generated_analysis_dir", str(tmp_path))
+
+        own_response = await _submit_report(client, user_token, minimal_jpeg)
+        other_response = await _submit_report(client, admin_token, minimal_jpeg)
+        own_id = own_response.json()["id"]
+        other_id = other_response.json()["id"]
+        generation = uuid.uuid4().hex
+        detection_id = str(uuid.uuid4())
+
+        for report_id in (own_id, other_id):
+            output_dir = tmp_path / report_id / generation
+            output_dir.mkdir(parents=True)
+            (output_dir / "annotated.jpg").write_bytes(b"annotated image")
+            (output_dir / "crop.jpg").write_bytes(b"cropped image")
+            report = (
+                await db.execute(select(Report).where(Report.id == report_id))
+            ).scalar_one()
+            report.ai_analysis = {
+                "artifacts": {
+                    "generation": generation,
+                    "annotated": f"{report_id}/{generation}/annotated.jpg",
+                    "detection_crops": {
+                        detection_id: f"{report_id}/{generation}/crop.jpg"
+                    },
+                }
+            }
+        await db.commit()
+
+        own_image = await client.get(
+            f"/api/reports/{own_id}/analysis-images/annotated",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        own_crop = await client.get(
+            f"/api/reports/{own_id}/analysis-images/crops/{detection_id}",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        other_image = await client.get(
+            f"/api/reports/{other_id}/analysis-images/annotated",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert own_image.status_code == 200
+        assert own_image.content == b"annotated image"
+        assert own_image.headers["content-type"] == "image/jpeg"
+        assert own_crop.status_code == 200
+        assert own_crop.content == b"cropped image"
+        assert own_crop.headers["content-type"] == "image/jpeg"
+        assert other_image.status_code == 404
+
+    async def test_missing_generated_image_returns_not_found(
+        self, client: AsyncClient, user_token: str, minimal_jpeg: bytes
+    ):
+        response = await _submit_report(client, user_token, minimal_jpeg)
+        report_id = response.json()["id"]
+        image_response = await client.get(
+            f"/api/reports/{report_id}/analysis-images/depth",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert image_response.status_code == 404

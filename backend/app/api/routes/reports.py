@@ -6,7 +6,7 @@ import math
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from app.schemas.report import (
     ReportSummary,
     ReviewStatusUpdate,
 )
+from app.services.analysis_artifact_service import resolve_analysis_image
 from app.services import report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -167,6 +168,61 @@ async def get_image(
         raise NotFoundError("Image file")
 
     return Response(content=image_data, media_type=media_type)
+
+
+# ── Generated analysis images ─────────────────────────────────────────────────
+
+def _generated_image_response(report: Report, artifact_key: str) -> FileResponse:
+    analysis = report.ai_analysis
+    artifacts = analysis.get("artifacts") if isinstance(analysis, dict) else None
+    relative_path = artifacts.get(artifact_key) if isinstance(artifacts, dict) else None
+    image_path = resolve_analysis_image(relative_path)
+    if image_path is None:
+        raise NotFoundError("Analysis image")
+    media_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+    return FileResponse(image_path, media_type=media_type)
+
+
+@router.get("/{report_id}/analysis-images/annotated")
+async def get_annotated_image(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve the model-annotated image for an accessible report."""
+    report = await report_service.get_report_for_user(db, report_id, current_user)
+    return _generated_image_response(report, "annotated")
+
+
+@router.get("/{report_id}/analysis-images/depth")
+async def get_depth_image(
+    report_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve the colorized relative-depth image for an accessible report."""
+    report = await report_service.get_report_for_user(db, report_id, current_user)
+    return _generated_image_response(report, "depth_map")
+
+
+@router.get("/{report_id}/analysis-images/crops/{detection_id}")
+async def get_detection_crop(
+    report_id: str,
+    detection_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Serve one generated crop, restricted to the report's owner/admin."""
+    report = await report_service.get_report_for_user(db, report_id, current_user)
+    analysis = report.ai_analysis
+    artifacts = analysis.get("artifacts") if isinstance(analysis, dict) else None
+    crops = artifacts.get("detection_crops") if isinstance(artifacts, dict) else None
+    relative_path = crops.get(detection_id) if isinstance(crops, dict) else None
+    image_path = resolve_analysis_image(relative_path)
+    if image_path is None:
+        raise NotFoundError("Detection crop")
+    media_type = "image/png" if image_path.suffix.lower() == ".png" else "image/jpeg"
+    return FileResponse(image_path, media_type=media_type)
 
 
 # ── Retry inference ───────────────────────────────────────────────────────────

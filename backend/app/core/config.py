@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     ai_pipeline_root: str = ""
     enable_depth_analysis: bool = True
     model_image_size: int = 320
+    generated_analysis_dir: str = "generated_analysis"
+
+    @property
+    def generated_analysis_path(self) -> Path:
+        path = Path(self.generated_analysis_dir)
+        return path if path.is_absolute() else Path(__file__).resolve().parents[2] / path
 
     @property
     def ai_pipeline_available(self) -> bool:
