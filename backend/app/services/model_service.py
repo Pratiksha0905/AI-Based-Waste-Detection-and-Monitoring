@@ -1,26 +1,14 @@
-"""
-EcoWatch AI — YOLO model service.
-
-Design:
-  - Model is loaded lazily on first inference request.
-  - If MODEL_PATH is unset or the file is absent, the backend starts normally
-    and all inference calls raise ModelUnavailableError.
-  - Never returns fabricated predictions.
-  - Result schema is fixed so that swapping the checkpoint does not break
-    the report API.
-
-When the real checkpoint is available:
-  1. Set MODEL_PATH=/path/to/best.pt in .env
-  2. Uncomment the ultralytics import in requirements.txt and reinstall.
-  3. The service will load the model on first use.
-"""
 
 from __future__ import annotations
 
+import io
 import logging
+import sys
+import tempfile
+
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from app.core.config import get_settings
 from app.core.exceptions import ModelUnavailableError
@@ -28,8 +16,6 @@ from app.core.exceptions import ModelUnavailableError
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-
-# ── Result schema ─────────────────────────────────────────────────────────────
 
 @dataclass
 class DetectionResult:
@@ -39,136 +25,224 @@ class DetectionResult:
     bbox_y1: Optional[float] = None
     bbox_x2: Optional[float] = None
     bbox_y2: Optional[float] = None
+    relative_depth: Optional[float] = None
 
 
 @dataclass
 class InferenceResult:
     detections: List[DetectionResult] = field(default_factory=list)
     model_version: Optional[str] = None
+    analysis: dict = field(default_factory=dict)
 
 
-# ── Model loader ──────────────────────────────────────────────────────────────
+def make_json_safe(value: Any) -> Any:
+    """Convert pipeline values into JSON-compatible Python values."""
+
+    if isinstance(value, dict):
+        return {
+            str(key): make_json_safe(item)
+            for key, item in value.items()
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [make_json_safe(item) for item in value]
+
+    if hasattr(value, "tolist"):
+        return make_json_safe(value.tolist())
+
+    if hasattr(value, "item"):
+        return value.item()
+
+    if isinstance(value, Path):
+        return str(value)
+
+    return value
+
 
 class _ModelService:
-    """
-    Singleton-like model wrapper.
 
-    Usage:
-        result = await model_service.run_inference(image_bytes)
-    """
+    def __init__(self):
+        self._pipeline = None
+        self._loaded = False
+        self._load_error = None
 
-    def __init__(self) -> None:
-        self._model = None          # the loaded ultralytics YOLO object
-        self._loaded: bool = False
-        self._load_error: Optional[str] = None
+    def _try_load(self):
 
-    def _try_load(self) -> None:
-        """Load the checkpoint once.  Records errors without crashing the server."""
         if self._loaded:
             return
 
-        if not settings.model_available:
-            self._load_error = (
-                "Model checkpoint is not configured. "
-                "Set MODEL_PATH in .env when the checkpoint is available."
-            )
-            self._loaded = True
-            return
-
         try:
-            # Import is deferred so the server starts even without ultralytics installed
-            from ultralytics import YOLO  # type: ignore[import]
+            if not settings.model_available:
+                raise FileNotFoundError(
+                    "MODEL_PATH is missing or the checkpoint does not exist."
+                )
 
-            logger.info("Loading YOLO model from: %s", settings.model_path)
-            self._model = YOLO(settings.model_path)
-            logger.info("Model loaded successfully.")
-            self._load_error = None
-        except ImportError:
-            self._load_error = (
-                "ultralytics is not installed. "
-                "Install it with: pip install ultralytics"
+            if not settings.ai_pipeline_available:
+                raise FileNotFoundError(
+                    "AI_PIPELINE_ROOT is missing or the pipeline file "
+                    "does not exist."
+                )
+
+            pipeline_root = str(
+                Path(settings.ai_pipeline_root).resolve()
             )
-            logger.warning(self._load_error)
+
+            if pipeline_root not in sys.path:
+                sys.path.insert(0, pipeline_root)
+
+            from src.pipeline.waste_analysis_pipeline import (
+                WasteAnalysisPipeline,
+            )
+
+            logger.info(
+                "Loading waste analysis pipeline from %s",
+                pipeline_root,
+            )
+
+            self._pipeline = WasteAnalysisPipeline(
+                model_path=settings.model_path,
+                include_depth=settings.enable_depth_analysis,
+                confidence=settings.model_confidence_threshold,
+                image_size=settings.model_image_size,
+            )
+
+            self._load_error = None
+
+            logger.info("Waste analysis pipeline loaded successfully.")
+
         except Exception as exc:
-            self._load_error = f"Model failed to load: {exc}"
-            logger.error(self._load_error)
+            self._pipeline = None
+            self._load_error = str(exc)
+
+            logger.exception(
+                "Failed to load waste analysis pipeline"
+            )
+
         finally:
             self._loaded = True
 
     @property
     def is_available(self) -> bool:
         self._try_load()
-        return self._model is not None
+        return self._pipeline is not None
 
     @property
     def status(self) -> dict:
         self._try_load()
+
         return {
-            "available": self.is_available,
+            "available": self._pipeline is not None,
             "model_path": settings.model_path or None,
+            "pipeline_root": settings.ai_pipeline_root or None,
+            "depth_enabled": settings.enable_depth_analysis,
             "error": self._load_error,
         }
 
     def run_inference(self, image_bytes: bytes) -> InferenceResult:
-        """
-        Run YOLO inference on raw image bytes.
 
-        :raises ModelUnavailableError: when the model is not loaded.
-        :returns: InferenceResult with actual detections — never fabricated.
-        """
         self._try_load()
 
-        if self._model is None:
+        if self._pipeline is None:
             raise ModelUnavailableError(
                 self._load_error
-                or "Model is not available. Inference cannot be performed."
+                or "Waste analysis pipeline is unavailable."
             )
 
-        import io
-        from PIL import Image  # already in requirements
+        from PIL import Image
 
-        img = Image.open(io.BytesIO(image_bytes))
+        temporary_path = None
 
-        results = self._model.predict(
-            source=img,
-            conf=settings.model_confidence_threshold,
-            verbose=False,
-        )
+        try:
+            # Validate the uploaded image and preserve its format.
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                image_format = (image.format or "JPEG").upper()
 
-        detections: List[DetectionResult] = []
-        model_version: Optional[str] = None
+                extensions = {
+                    "JPEG": ".jpg",
+                    "PNG": ".png",
+                    "WEBP": ".webp",
+                    "BMP": ".bmp",
+                    "TIFF": ".tiff",
+                }
 
-        for r in results:
-            # Extract model name/version from the ultralytics result object
-            if model_version is None:
-                try:
-                    model_version = Path(settings.model_path).stem
-                except Exception:
-                    pass
+                suffix = extensions.get(image_format, ".jpg")
+                image.verify()
 
-            if r.boxes is None:
-                continue
+            # The existing pipeline accepts a filesystem path.
+            with tempfile.NamedTemporaryFile(
+                suffix=suffix,
+                delete=False,
+            ) as temporary_file:
+                temporary_file.write(image_bytes)
+                temporary_path = temporary_file.name
 
-            names = r.names  # dict[int, str] — actual class names from the checkpoint
+            raw_analysis = self._pipeline.analyze(
+                temporary_path,
+                save_depth_map=False,
+            )
 
-            for box in r.boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                xyxyn = box.xyxyn[0].tolist()  # normalised [x1, y1, x2, y2]
+            analysis = make_json_safe(raw_analysis)
+
+            if not isinstance(analysis, dict):
+                raise ValueError(
+                    "Pipeline returned an invalid analysis result."
+                )
+
+            # Do not expose temporary server paths in API responses.
+            analysis.pop("image_path", None)
+
+            image_width = int(analysis["image_width"])
+            image_height = int(analysis["image_height"])
+
+            if image_width <= 0 or image_height <= 0:
+                raise ValueError("Invalid image dimensions in pipeline output.")
+
+            detections = []
+
+            for item in analysis.get("detections", []):
+
+                bbox = item.get("bbox_xyxy")
+
+                if not bbox or len(bbox) != 4:
+                    continue
+
+                x1, y1, x2, y2 = map(float, bbox)
 
                 detections.append(
                     DetectionResult(
-                        predicted_class=names.get(cls_id, f"class_{cls_id}"),
-                        confidence=conf,
-                        bbox_x1=xyxyn[0],
-                        bbox_y1=xyxyn[1],
-                        bbox_x2=xyxyn[2],
-                        bbox_y2=xyxyn[3],
+                        predicted_class=str(item["class_name"]),
+                        confidence=float(item["confidence"]),
+                        bbox_x1=max(0.0, min(1.0, x1 / image_width)),
+                        bbox_y1=max(0.0, min(1.0, y1 / image_height)),
+                        bbox_x2=max(0.0, min(1.0, x2 / image_width)),
+                        bbox_y2=max(0.0, min(1.0, y2 / image_height)),
                     )
                 )
 
-        return InferenceResult(detections=detections, model_version=model_version)
+            return InferenceResult(
+                detections=detections,
+                model_version=Path(settings.model_path).stem,
+                analysis=analysis,
+            )
+
+        except ModelUnavailableError:
+            raise
+
+        except Exception as exc:
+            logger.exception("Waste inference failed")
+            raise RuntimeError(
+                f"Waste analysis failed: {exc}"
+            ) from exc
+
+        finally:
+            if temporary_path:
+                try:
+                    Path(temporary_path).unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Could not remove temporary image: %s",
+                        temporary_path,
+                    )
 
 
-# Singleton instance — loaded once per worker process
 model_service = _ModelService()

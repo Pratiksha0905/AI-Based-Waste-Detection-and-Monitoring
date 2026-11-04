@@ -22,23 +22,22 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ── Database ──────────────────────────────────────────────────────────────
+    # Database
     database_url: str = "sqlite+aiosqlite:///./ecowatch.db"
 
-    # ── Authentication ────────────────────────────────────────────────────────
+    # Authentication
     secret_key: str = "INSECURE_DEVELOPMENT_KEY_REPLACE_IN_PRODUCTION"
     access_token_expire_minutes: int = 60
     algorithm: str = "HS256"
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
+    # CORS
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     @property
     def cors_origins_list(self) -> List[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
-    # ── Legacy image migration source ─────────────────────────────────────────
-    # Used only to import old filesystem images; new images are database-backed.
+    # Legacy image migration
     legacy_upload_dir: str = Field(
         default="uploads",
         validation_alias=AliasChoices("LEGACY_UPLOAD_DIR", "UPLOAD_DIR"),
@@ -53,25 +52,42 @@ class Settings(BaseSettings):
     def legacy_upload_path(self) -> Path:
         return Path(self.legacy_upload_dir)
 
-    # ── AI model ──────────────────────────────────────────────────────────────
+    # AI model
     model_path: str = ""
     model_confidence_threshold: float = 0.25
 
+    # External AI pipeline
+    ai_pipeline_root: str = ""
+    enable_depth_analysis: bool = True
+    model_image_size: int = 320
+
+    @property
+    def ai_pipeline_available(self) -> bool:
+        if not self.ai_pipeline_root:
+            return False
+
+        pipeline_file = (
+            Path(self.ai_pipeline_root)
+            / "src"
+            / "pipeline"
+            / "waste_analysis_pipeline.py"
+        )
+        return pipeline_file.is_file()
+
     @property
     def model_available(self) -> bool:
-        """True only when MODEL_PATH is set and the file actually exists."""
         if not self.model_path:
             return False
         return Path(self.model_path).is_file()
 
-    # ── Hotspot clustering ────────────────────────────────────────────────────
+    # Hotspot clustering
     hotspot_cluster_radius_m: float = 30.0
     hotspot_low_min: int = 1
     hotspot_medium_min: int = 3
     hotspot_high_min: int = 6
     hotspot_critical_min: int = 10
 
-    # ── Miscellaneous ─────────────────────────────────────────────────────────
+    # Miscellaneous
     environment: str = "development"
 
 
