@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from app.db.base import Base
@@ -62,6 +62,8 @@ class Report(Base):
     # Number of times inference has been attempted
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     processing_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Complete JSON-safe output from the waste analysis pipeline.
+    ai_analysis: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # ── Admin review ───────────────────────────────────────────────────────────
     review_status: Mapped[str] = mapped_column(

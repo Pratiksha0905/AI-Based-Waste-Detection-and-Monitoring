@@ -29,6 +29,18 @@ function Status({ value }: { value: string }) {
   );
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function displayValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return 'Unavailable';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value) ?? String(value);
+}
+
 export default function ReportDetailPage() {
   const { reportId } = useParams();
   const { user } = useAuth();
@@ -40,21 +52,34 @@ export default function ReportDetailPage() {
 
   useEffect(() => {
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     if (!reportId) return;
-    reportsApi.getById(reportId)
-      .then((result) => {
-        if (active) setReportData(result);
-      })
-      .catch((requestError: unknown) => {
+
+    const loadReport = async () => {
+      try {
+        const result = await reportsApi.getById(reportId);
+        if (!active) return;
+        setReportData(result);
+        setRequestError(null);
+        if (result.processing_status === 'processing' || (result.processing_status === 'pending' && !result.processing_error)) {
+          timer = setTimeout(loadReport, 2500);
+        }
+      } catch (requestError: unknown) {
         if (active) {
           setRequestError({
             reportId,
             message: requestError instanceof Error ? requestError.message : 'Unable to load this report.',
           });
         }
-      });
-    return () => { active = false; };
-  }, [reportId]);
+      }
+    };
+
+    void loadReport();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [reportId, reportData?.processing_status, reportData?.processing_error]);
 
   useEffect(() => {
     let active = true;
@@ -259,6 +284,82 @@ export default function ReportDetailPage() {
               </div>
             )}
           </section>
+
+          {report.ai_analysis && (
+            <section className="card">
+              <div className="card-header">
+                <h3 className="section-title">AI waste analysis</h3>
+                <span className="text-xs text-gray-500">Pipeline output</span>
+              </div>
+              <div className="card-body space-y-4">
+                {(() => {
+                  const analysis = report.ai_analysis ?? {};
+                  const spatial = asRecord(analysis.spatial_analysis);
+                  const counts = asRecord(analysis.class_counts);
+                  const severity = displayValue(analysis.severity);
+                  const priority = displayValue(analysis.cleanup_priority);
+                  const busiest = asRecord(spatial?.busiest_cell);
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-lg bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">Severity</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-900">{severity}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">Cleanup priority</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-900">{priority}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">Depth analysis</p>
+                          <p className="mt-1 text-sm font-semibold capitalize text-gray-900">{displayValue(analysis.depth_status)}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-3">
+                          <p className="text-xs text-gray-500">Volume analysis</p>
+                          <p className="mt-1 text-sm font-semibold capitalize text-gray-900">{displayValue(analysis.volume_status)}</p>
+                        </div>
+                      </div>
+
+                      {counts && Object.keys(counts).length > 0 && (
+                        <div>
+                          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Detected classes</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(counts).map(([name, count]) => (
+                              <span key={name} className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700">
+                                {name.replaceAll('_', ' ')}: {displayValue(count)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {spatial && (
+                        <div className="border-t border-gray-100 pt-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Spatial distribution</h4>
+                          <p className="mt-2 text-sm text-gray-800">
+                            {displayValue(spatial.occupied_cells)} of {displayValue(spatial.total_cells)} image-grid cells occupied
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">Concentration: {displayValue(spatial.concentration)}</p>
+                          {busiest && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Busiest image cell: row {displayValue(busiest.row)}, column {displayValue(busiest.column)}
+                            </p>
+                          )}
+                          {typeof spatial.interpretation === 'string' && (
+                            <p className="mt-2 text-xs text-gray-500">{spatial.interpretation}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <p className="border-t border-gray-100 pt-3 text-[11px] text-gray-500">
+                        Depth values are relative image estimates. The pipeline does not provide calibrated physical distance or actual volume in cubic metres unless a metric scale is available.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>

@@ -61,7 +61,8 @@ class ReportOut(BaseModel):
     review_status: ReviewStatus
     retry_count: int
     processing_error: Optional[str] = None
-    detections: List[DetectionOut] = []
+    ai_analysis: Optional[dict] = None
+    detections: List[DetectionOut] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

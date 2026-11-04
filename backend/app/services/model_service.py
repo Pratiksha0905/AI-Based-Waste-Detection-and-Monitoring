@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 import sys
 import tempfile
 
@@ -46,6 +47,9 @@ def make_json_safe(value: Any) -> Any:
 
     if isinstance(value, (list, tuple)):
         return [make_json_safe(item) for item in value]
+
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
 
     if hasattr(value, "tolist"):
         return make_json_safe(value.tolist())
@@ -216,6 +220,11 @@ class _ModelService:
                         bbox_y1=max(0.0, min(1.0, y1 / image_height)),
                         bbox_x2=max(0.0, min(1.0, x2 / image_width)),
                         bbox_y2=max(0.0, min(1.0, y2 / image_height)),
+                        relative_depth=(
+                            float(item["relative_depth"])
+                            if item.get("relative_depth") is not None
+                            else None
+                        ),
                     )
                 )
 

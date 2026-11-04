@@ -73,8 +73,7 @@ export default function ImageAnalysisPage() {
   return (
     <div className="p-5 max-w-5xl mx-auto space-y-5">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-        Submitted reports are stored by the backend. AI analysis runs only when a model checkpoint is configured;
-        submitting a report does not mean analysis has completed.
+        Your image and location are saved as a report. The configured YOLO11 and depth-analysis pipeline runs automatically in the background; open the report details to follow its results.
       </div>
 
       {report && (

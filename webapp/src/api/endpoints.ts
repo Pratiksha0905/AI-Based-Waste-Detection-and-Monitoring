@@ -48,6 +48,7 @@ export interface ReportOut {
   review_status: ReviewStatus;
   retry_count: number;
   processing_error?: string | null;
+  ai_analysis?: Record<string, unknown> | null;
   detections: DetectionOut[];
 }
 

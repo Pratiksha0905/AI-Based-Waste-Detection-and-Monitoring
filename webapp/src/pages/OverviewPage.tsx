@@ -98,7 +98,7 @@ export default function OverviewPage() {
         <>
           {!stats.model_available && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              AI detection is unavailable because no model checkpoint is configured. Submitted reports and counts below are real backend records.
+              AI analysis is unavailable because the configured model pipeline could not be loaded. Submitted reports and counts below are real backend records.
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -137,6 +137,19 @@ export default function OverviewPage() {
                 <div className="mt-6 border-t border-gray-100 pt-4 text-sm">
                   <p className="text-gray-500">AI detections</p>
                   <p className="mt-1 font-semibold text-gray-900">{stats.total_detections ?? 'Unavailable'}</p>
+                  {stats.top_waste_categories?.length ? (
+                    <div className="mt-4 border-t border-gray-100 pt-3">
+                      <p className="mb-2 text-xs font-medium text-gray-500">Top detected classes</p>
+                      <ul className="space-y-1.5">
+                        {stats.top_waste_categories.slice(0, 5).map((item) => (
+                          <li key={item.category} className="flex justify-between gap-3 text-xs">
+                            <span className="capitalize text-gray-600">{item.category.replaceAll('_', ' ')}</span>
+                            <span className="font-semibold text-gray-800">{item.count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </section>

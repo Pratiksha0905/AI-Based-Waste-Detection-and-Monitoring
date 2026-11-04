@@ -93,7 +93,7 @@ export default function AnalyticsPage() {
         <Bot size={17} className="mt-0.5 shrink-0" />
         {stats.model_available
           ? 'AI checkpoint is available. Detection metrics below are populated only when analysis has returned results.'
-          : 'AI analysis is unavailable: no model checkpoint is configured. AI-dependent analytics are not fabricated.'}
+          : 'AI analysis pipeline is unavailable. AI-dependent analytics are not fabricated.'}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

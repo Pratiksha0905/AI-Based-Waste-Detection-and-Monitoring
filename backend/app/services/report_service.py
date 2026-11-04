@@ -16,7 +16,7 @@ from typing import Callable, List, Optional, Tuple
 
 from fastapi import BackgroundTasks
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -133,7 +133,9 @@ async def _run_inference(report_id: str) -> None:
                 None, model_service.run_inference, raw
             )
 
-            # Persist detections
+            # Replace any previous attempt output, then persist this attempt atomically.
+            await db.execute(delete(Detection).where(Detection.report_id == report_id))
+
             detections = [
                 Detection(
                     report_id=report_id,
@@ -143,6 +145,7 @@ async def _run_inference(report_id: str) -> None:
                     bbox_y1=d.bbox_y1,
                     bbox_x2=d.bbox_x2,
                     bbox_y2=d.bbox_y2,
+                    relative_depth=d.relative_depth,
                     model_version=result.model_version,
                 )
                 for d in result.detections
@@ -152,7 +155,11 @@ async def _run_inference(report_id: str) -> None:
             await db.execute(
                 update(Report)
                 .where(Report.id == report_id)
-                .values(processing_status="completed", processing_error=None)
+                .values(
+                    processing_status="completed",
+                    processing_error=None,
+                    ai_analysis=result.analysis,
+                )
             )
             await db.commit()
             logger.info(
@@ -233,6 +240,7 @@ async def list_user_reports(
 
     rows = await db.execute(
         select(Report)
+        .options(selectinload(Report.detections))
         .where(Report.user_id == user.id)
         .order_by(Report.submitted_at.desc())
         .offset(offset)
@@ -262,7 +270,12 @@ async def list_all_reports(
         count_q = count_q.where(Report.review_status == review_status)
 
     total = (await db.execute(count_q)).scalar_one()
-    rows = await db.execute(q.order_by(Report.submitted_at.desc()).offset(offset).limit(page_size))
+    rows = await db.execute(
+        q.options(selectinload(Report.detections))
+        .order_by(Report.submitted_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
     return rows.scalars().all(), total
 
 
@@ -308,6 +321,8 @@ async def retry_inference(
 
     report.processing_status = "pending"
     report.processing_error = None
+    report.ai_analysis = None
+    report.detections.clear()
     report.retry_count += 1
     await db.commit()
 
