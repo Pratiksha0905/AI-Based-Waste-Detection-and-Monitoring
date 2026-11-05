@@ -17,7 +17,23 @@ npm install
 npm run dev
 ```
 
-The frontend defaults to `http://localhost:8000` for the API, matching the backend development server. To use a different backend, set `VITE_API_URL` in a `webapp/.env` file.
+The frontend defaults to `http://localhost:8000` for the API, matching the backend development server. For local development, set `VITE_API_URL` in `webapp/.env` if needed. For deployment, set `VITE_API_URL` in the frontend hosting provider's build environment; Vite embeds it in the generated bundle at build time.
+
+## Deployment configuration
+
+The backend reads settings from environment variables directly, so a `.env` file is not needed in a deployed service. Add these variables in the backend hosting provider's environment settings:
+
+| Variable | Production value |
+|---|---|
+| `DATABASE_URL` | PostgreSQL URL using `postgresql+asyncpg://...`; use a managed database or other persistent database |
+| `SECRET_KEY` | A strong, unique random value; generate one with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `CORS_ORIGINS` | Comma-separated URLs of the deployed frontend, with no trailing slash |
+| `ENVIRONMENT` | `production` |
+| `MODEL_PATH` | Optional path to a deployed YOLO checkpoint; leave unset if inference is not configured |
+
+`ACCESS_TOKEN_EXPIRE_MINUTES`, `MAX_UPLOAD_SIZE_MB`, and the `HOTSPOT_*` settings are optional and have defaults. Do not use the example secret or SQLite database for a production deployment. Ensure the provider gives the API access to the configured model file if `MODEL_PATH` is set.
+
+Build the frontend with its `VITE_API_URL` set to the deployed API's base URL (for example, `https://api.example.com`). Before starting a non-SQLite backend for the first time or after an update, run `alembic upgrade head` from `backend/`. Start the API with `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000` (adjust the port to the value supplied by the hosting provider).
 
 ## Commands
 

@@ -11,7 +11,7 @@ uvicorn[standard]==0.34.3
 sqlalchemy==2.0.41
 alembic==1.16.1
 aiosqlite==0.21.0           # async SQLite driver (dev / tests)
-# psycopg2-binary==2.9.9    # uncomment for PostgreSQL in production
+asyncpg==0.30.0             # async PostgreSQL driver (production)
 
 # Authentication & security
 python-jose[cryptography]==3.5.0
